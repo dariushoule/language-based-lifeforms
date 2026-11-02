@@ -18,8 +18,8 @@ const assets = JSON.parse(fs.readFileSync('art/assets.json', 'utf8'));
 const force = process.argv.includes('--force');
 const n = Number(process.argv.find((a) => a.startsWith('--n='))?.slice(4) ?? 1);
 const only = process.argv.slice(2).find((a) => !a.startsWith('--'));
-// An approved sprite becomes the style anchor for every sprite generated after it.
-const STYLE_REF = 'client/public/sprites/lbl_naked.png';
+// The procedural LBL (tools/lbl-body.js) is the style anchor for every generated sprite.
+const STYLE_REF = 'art/preview/lbl_ref.png';
 
 function prompt(a, useRef) {
   return [
@@ -55,7 +55,7 @@ for (const a of assets) {
   const out = `art/raw/${a.id}.png`;
   if (fs.existsSync(out) && !force) { console.log(`skip ${a.id} (raw exists; --force to regenerate)`); continue; }
   // Tiles must not inherit a character's outline and side shading, so only sprites get the reference.
-  const useRef = a.key && a.id !== 'lbl_naked' && fs.existsSync(STYLE_REF);
+  const useRef = a.key && fs.existsSync(STYLE_REF);
 
   const t0 = Date.now();
   const input = { prompt: prompt(a, useRef) };

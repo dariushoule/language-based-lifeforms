@@ -15,7 +15,7 @@ export function createLBL(x) {
     w: 16, h: 24,
     grounded: false,
     bornAt: Date.now(),
-    sprite: 'lbl_naked',
+    sprite: 'lbl_body',
     // Humanoid drives, 0..1 (1 = fully satisfied)
     needs: { energy: 0.9, hunger: 0.8, social: 0.5, meaning: 0.1 },
     emotion: 'curious',

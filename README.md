@@ -22,3 +22,5 @@ npm run pixelize [assetId]  # re-run only the snap step on art/raw/<id>.png
 - `art/assets.json` – asset id, canvas size, prompt
 - `art/palette.json` – fixed 32-color palette every pixel is snapped to
 - `art/preview/` – 8x previews for review
+
+The LBL body and its emotion faces are drawn procedurally (`npm run lbl`, `tools/lbl-body.js`) rather than generated: a fixed, exact template keeps faces and clothing layers aligned. Generated art is sampled on the grid the model actually drew (art-pixel size from run lengths, phase from edge positions), never resampled.

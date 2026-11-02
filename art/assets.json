@@ -1,14 +1,5 @@
 [
   {
-    "id": "lbl_naked",
-    "size": [
-      16,
-      24
-    ],
-    "key": true,
-    "prompt": "A small living block creature shaped like a tall upright brick: a plain vertical rectangle about one and a half times taller than it is wide, flat bottom, smooth skin-tone clay color. Two small black dot eyes near the top of the front face and a tiny flat mouth. No arms, no legs, no feet, no clothing. Calm and curious."
-  },
-  {
     "id": "ground",
     "size": [
       32,

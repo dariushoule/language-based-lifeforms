@@ -1,13 +1,15 @@
 import Phaser from 'phaser';
 
 const ZOOM = 2; // integer scale keeps art on the pixel grid
+const FACES = ['curious', 'happy', 'uneasy', 'lonely', 'sleepy'];
 const card = document.getElementById('card');
 
 class WorldScene extends Phaser.Scene {
   constructor() { super('world'); }
 
   preload() {
-    this.load.image('lbl_naked', 'sprites/lbl_naked.png');
+    this.load.image('lbl_body', 'sprites/lbl_body.png');
+    for (const f of FACES) this.load.image(`face_${f}`, `sprites/face_${f}.png`);
     this.load.image('ground', 'sprites/ground.png');
     // Missing art is fine: we fall back to placeholder blocks in create().
     this.load.on('loaderror', () => {});
@@ -23,13 +25,6 @@ class WorldScene extends Phaser.Scene {
   }
 
   makePlaceholders() {
-    if (!this.textures.exists('lbl_naked')) {
-      const g = this.make.graphics({ add: false });
-      g.fillStyle(0xe8b796).fillRect(0, 0, 16, 24);
-      g.fillStyle(0xc28569).fillRect(12, 0, 4, 24);
-      g.fillStyle(0x181425).fillRect(4, 6, 2, 2).fillRect(9, 6, 2, 2);
-      g.generateTexture('lbl_naked', 16, 24);
-    }
     if (!this.textures.exists('ground')) {
       const g = this.make.graphics({ add: false });
       g.fillStyle(0x733e39).fillRect(0, 0, 32, 32);
@@ -56,11 +51,14 @@ class WorldScene extends Phaser.Scene {
         s = this.add.image(e.x, e.y, e.sprite).setOrigin(0.5, 1).setInteractive({ pixelPerfect: true });
         s.on('pointerover', () => (this.hovered = e.id));
         s.on('pointerout', () => { if (this.hovered === e.id) this.hovered = null; });
+        // Faces are overlays on the same 16x24 canvas as the body, so they share its origin.
+        s.face = this.add.image(e.x, e.y, 'face_curious').setOrigin(0.5, 1);
         this.sprites.set(e.id, s);
       }
       s.target = e;
+      s.face.setTexture(FACES.includes(e.emotion) ? `face_${e.emotion}` : 'face_curious');
     }
-    for (const [id, s] of this.sprites) if (!seen.has(id)) { s.destroy(); this.sprites.delete(id); }
+    for (const [id, s] of this.sprites) if (!seen.has(id)) { s.face.destroy(); s.destroy(); this.sprites.delete(id); }
   }
 
   buildWorld(w) {
@@ -76,6 +74,7 @@ class WorldScene extends Phaser.Scene {
       s.x += (s.target.x - s.x) * k;
       s.y += (s.target.y - s.y) * k;
       s.x = Math.round(s.x); s.y = Math.round(s.y);
+      s.face.setPosition(s.x, s.y);
     }
     this.renderCard();
   }

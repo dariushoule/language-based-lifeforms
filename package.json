@@ -8,6 +8,7 @@
     "dev:client": "vite client",
     "build": "vite build client --outDir ../dist",
     "art": "node tools/gen-art.js",
+    "lbl": "node tools/lbl-body.js",
     "pixelize": "node tools/pixelize.js"
   },
   "dependencies": {
