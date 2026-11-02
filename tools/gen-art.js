@@ -1,68 +1,51 @@
-// Asks Codex (built-in image_gen) for a raw image per asset, then pixelizes it.
-// Usage: node tools/gen-art.js [assetId] [--force]
-// Env: CODEX_BIN, LBL_CODEX_MODEL (orchestrating model; it only has to make one tool call).
-import { spawnSync } from 'node:child_process';
+// Generates a small raw image per asset on fal (FLUX.2 klein 4B), then pixelizes it.
+// Usage: node tools/gen-art.js [assetId] [--force] [--n=4]
+// Needs FAL_API_KEY in .env. Cost at 512x512: ~$0.0013/image, ~$0.0026 with a style reference.
 import fs from 'node:fs';
-import os from 'node:os';
-import path from 'node:path';
 import { pixelize } from './pixelize.js';
 
-const CODEX_HOME = process.env.CODEX_HOME ?? path.join(os.homedir(), '.codex');
-const CODEX = process.env.CODEX_BIN ??
-  path.join(CODEX_HOME, 'packages/standalone/releases/0.166.0-x86_64-pc-windows-msvc/bin/codex.exe');
-const MODEL = process.env.LBL_CODEX_MODEL ?? 'gpt-6-luna';
-const style = fs.readFileSync('art/style.md', 'utf8');
+process.loadEnvFile?.('.env');
+const KEY = process.env.FAL_API_KEY;
+if (!KEY) throw new Error('FAL_API_KEY missing from .env');
+
+const T2I = 'fal-ai/flux-2/klein/4b';
+const EDIT = 'fal-ai/flux-2/klein/4b/edit';
+const SIZE = { width: 512, height: 512 };
+// art/style.md holds '## common', '## sprite' and '## tile' sections; each asset gets common + its kind.
+const style = Object.fromEntries(fs.readFileSync('art/style.md', 'utf8').split(/^## /m).filter(Boolean)
+  .map((s) => [s.slice(0, s.indexOf('\n')).trim(), s.slice(s.indexOf('\n')).trim()]));
 const assets = JSON.parse(fs.readFileSync('art/assets.json', 'utf8'));
 const force = process.argv.includes('--force');
+const n = Number(process.argv.find((a) => a.startsWith('--n='))?.slice(4) ?? 1);
 const only = process.argv.slice(2).find((a) => !a.startsWith('--'));
-// An approved sprite becomes the style anchor for everything generated after it.
-const STYLE_REF = 'art/preview/lbl_naked.png';
+// An approved sprite becomes the style anchor for every sprite generated after it.
+const STYLE_REF = 'client/public/sprites/lbl_naked.png';
 
-function imagePrompt(a, useRef) {
+function prompt(a, useRef) {
   return [
-    useRef ? 'The attached image is the style reference: match its pixel scale, outline, palette and shading exactly.' : '',
-    style,
+    useRef ? 'Draw a new sprite in exactly the same pixel art style, pixel scale, outline and palette as the reference image.' : '',
+    style.common,
+    a.key ? style.sprite : style.tile,
     a.key
-      ? `The object must be exactly ${a.size[0]} art-pixels wide and ${a.size[1]} art-pixels tall including its outline, drawn as large uniform square blocks of identical size.`
-      : `The whole canvas is exactly ${a.size[0]}x${a.size[1]} art-pixels, drawn as large uniform square blocks of identical size.`,
-    'Square 1:1 canvas.',
+      ? `The object is about ${a.size[0]} pixels wide and ${a.size[1]} pixels tall, drawn with big chunky square pixels.`
+      : `The whole canvas is ${a.size[0]}x${a.size[1]} big chunky square pixels.`,
     `Asset: ${a.prompt}`,
   ].filter(Boolean).join('\n');
 }
 
-// Every extra agent round re-sends ~15k+ tokens of context, so the instructions aim for
-// exactly two rounds: one image_gen call, one short reply. We fetch the file ourselves.
-function agentPrompt(a, useRef) {
-  return [
-    'Call your built-in image generation tool exactly once, immediately, passing the IMAGE PROMPT below verbatim' +
-      (useRef ? ' together with the attached reference image' : '') + '.',
-    'Do not read any files or skills, do not run shell commands, do not wait or poll, do not inspect or describe the result.',
-    'When the tool returns, reply with the single word DONE.',
-    '',
-    'IMAGE PROMPT:',
-    imagePrompt(a, useRef),
-  ].join('\n');
+async function fal(model, input) {
+  const res = await fetch(`https://fal.run/${model}`, {
+    method: 'POST',
+    headers: { Authorization: `Key ${KEY}`, 'Content-Type': 'application/json' },
+    body: JSON.stringify({ ...input, image_size: SIZE, num_images: n, output_format: 'png', sync_mode: true }),
+  });
+  if (!res.ok) throw new Error(`${model}: ${res.status} ${await res.text()}`);
+  return res.json();
 }
 
-function runCodex(a, useRef) {
-  const args = ['exec', '--json', '--ephemeral', '--skip-git-repo-check', '-s', 'read-only',
-    '-m', MODEL, '-c', 'model_reasoning_effort="low"', '-C', process.cwd()];
-  if (useRef) args.push('-i', STYLE_REF);
-  args.push('-');
-  const r = spawnSync(CODEX, args, { input: agentPrompt(a, useRef), encoding: 'utf8', maxBuffer: 64 << 20 });
-  const events = r.stdout.split('\n').filter(Boolean).flatMap((l) => { try { return [JSON.parse(l)]; } catch { return []; } });
-  const thread = events.find((e) => e.type === 'thread.started')?.thread_id;
-  const usage = events.findLast((e) => e.type === 'turn.completed')?.usage;
-  if (r.status !== 0 || !thread) process.stderr.write(r.stderr.slice(-2000));
-  return { thread, usage };
-}
-
-function newestImage(thread) {
-  const dir = path.join(CODEX_HOME, 'generated_images', thread);
-  if (!fs.existsSync(dir)) return null;
-  const pngs = fs.readdirSync(dir).filter((f) => f.endsWith('.png'))
-    .map((f) => path.join(dir, f)).sort((x, y) => fs.statSync(y).mtimeMs - fs.statSync(x).mtimeMs);
-  return pngs[0] ?? null;
+async function toBuffer(url) {
+  if (url.startsWith('data:')) return Buffer.from(url.slice(url.indexOf(',') + 1), 'base64');
+  return Buffer.from(await (await fetch(url)).arrayBuffer());
 }
 
 fs.mkdirSync('art/raw', { recursive: true });
@@ -75,12 +58,23 @@ for (const a of assets) {
   const useRef = a.key && a.id !== 'lbl_naked' && fs.existsSync(STYLE_REF);
 
   const t0 = Date.now();
-  console.log(`generating ${a.id} with ${MODEL} ...`);
-  const { thread, usage } = runCodex(a, useRef);
-  const img = thread && newestImage(thread);
-  if (!img) { console.error(`codex produced no image for ${a.id}`); continue; }
-  fs.copyFileSync(img, out);
-  if (usage) console.log(`  ${((Date.now() - t0) / 1000).toFixed(0)}s, tokens in ${usage.input_tokens} ` +
-    `(cached ${usage.cached_input_tokens}) out ${usage.output_tokens}`);
+  const input = { prompt: prompt(a, useRef) };
+  if (useRef) input.image_urls = [`data:image/png;base64,${fs.readFileSync(STYLE_REF).toString('base64')}`];
+  const r = await fal(useRef ? EDIT : T2I, input);
+  console.log(`generated ${a.id} with ${useRef ? EDIT : T2I} in ${((Date.now() - t0) / 1000).toFixed(1)}s (seed ${r.seed})`);
+
+  // With --n>1, every candidate is kept as <id>.<i>.png and the cleanest grid fit becomes the raw.
+  const bufs = await Promise.all(r.images.map((img) => toBuffer(img.url)));
+  let best = 0;
+  if (bufs.length > 1) {
+    const fits = [];
+    for (const [i, b] of bufs.entries()) {
+      fs.writeFileSync(`art/raw/${a.id}.${i}.png`, b);
+      fits.push(await pixelize(a, { src: `art/raw/${a.id}.${i}.png`, write: false }));
+    }
+    best = fits.indexOf(Math.max(...fits));
+    console.log(`  candidate fits ${fits.map((f) => (f * 100).toFixed(1)).join(' / ')} -> #${best}`);
+  }
+  fs.writeFileSync(out, bufs[best]);
   await pixelize(a);
 }

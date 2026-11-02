@@ -1,3 +1,4 @@
 node_modules
 dist
 art/raw
+.env

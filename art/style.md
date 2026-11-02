@@ -1,10 +1,8 @@
-Style bible (prepended to every asset prompt):
+## common
+Crisp 2D pixel art for a side-view video game, 16-bit era. Big chunky square pixels with hard edges, flat colors, no gradients, no blur, no anti-aliasing. Warm muted palette, light from the upper left.
 
-- Crisp 2D pixel art for a side-view game, like a 16-bit era sprite.
-- Strict orthographic side view, camera at eye level, no perspective, no isometric angle.
-- Hard pixel edges. No anti-aliasing, no gradients, no blur, no dithering noise, no drop shadow, no outline glow.
-- Limited palette: warm muted colors, a single darker shade for the right side of objects, light comes from the upper left.
-- Characters and objects (not tiles) have a 1-pixel dark outline (#181425). Tiles have no outline and no side shading.
-- Object is centered, fully in frame, touching nothing, with generous empty margin.
-- Background: perfectly flat solid magenta #FF00FF filling the whole canvas (unless the asset says it is a tile).
-- No text, no labels, no watermark, no border, no frame.
+## sprite
+A single game sprite centered on a perfectly flat solid magenta (#FF00FF) background with wide empty margins. Strict side view at eye level. The sprite has a 1-pixel near-black outline and its right side is one shade darker. No ground, no shadow, no text.
+
+## tile
+A seamless tileable square texture that fills the entire image edge to edge. Flat side view cross-section. No border, no frame, no outline, no background, no text.

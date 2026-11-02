@@ -11,10 +11,10 @@ npm run dev        # sim on :8080, web on :5173
 
 ## Art pipeline
 
-Sprites are generated with Codex's built-in image tool and then deterministically snapped onto the real pixel grid.
+Sprites are generated small and cheap on fal (FLUX.2 klein 4B at 512x512, ~$0.0013/image, ~$0.0026 with a style reference) and then deterministically snapped onto the real pixel grid. Needs `FAL_API_KEY` in `.env`.
 
 ```sh
-npm run art [assetId]       # generate raw image via codex, then pixelize
+npm run art [assetId] [--force] [--n=4]  # generate via fal, auto-pick the cleanest candidate, pixelize
 npm run pixelize [assetId]  # re-run only the snap step on art/raw/<id>.png
 ```
 

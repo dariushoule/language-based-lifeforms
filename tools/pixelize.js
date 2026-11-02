@@ -21,13 +21,34 @@ function nearest(r, g, b) {
   return best;
 }
 
+// Background = everything reachable from the image border through small color steps.
+// Models drift off pure #FF00FF and add vignettes, so no single key color works, but the
+// sprite's dark outline is always a hard edge the fill cannot cross.
+function backgroundMask(data, w, h) {
+  const bg = new Uint8Array(w * h);
+  const stack = [];
+  for (let x = 0; x < w; x++) stack.push(x, (h - 1) * w + x);
+  for (let y = 0; y < h; y++) stack.push(y * w, y * w + w - 1);
+  for (const p of stack) bg[p] = 1;
+  const close = (p, q) =>
+    (data[p * 4] - data[q * 4]) ** 2 + (data[p * 4 + 1] - data[q * 4 + 1]) ** 2 + (data[p * 4 + 2] - data[q * 4 + 2]) ** 2 < 28 ** 2;
+  while (stack.length) {
+    const p = stack.pop(), x = p % w;
+    for (const q of [x > 0 ? p - 1 : -1, x < w - 1 ? p + 1 : -1, p - w, p + w]) {
+      if (q < 0 || q >= w * h || bg[q] || !close(p, q)) continue;
+      bg[q] = 1;
+      stack.push(q);
+    }
+  }
+  return bg;
+}
+
 // Palette index per source pixel, -1 for transparent.
 function indexImage(data, w, h, key) {
+  const bg = key && backgroundMask(data, w, h);
   const idx = new Int16Array(w * h);
   for (let i = 0, p = 0; p < w * h; i += 4, p++) {
-    const [r, g, b, a] = [data[i], data[i + 1], data[i + 2], data[i + 3]];
-    const magenta = key && r > 150 && b > 150 && g < 110 && Math.abs(r - b) < 90;
-    idx[p] = a < 128 || magenta ? -1 : nearest(r, g, b);
+    idx[p] = data[i + 3] < 128 || (bg && bg[p]) ? -1 : nearest(data[i], data[i + 1], data[i + 2]);
   }
   return idx;
 }
@@ -78,9 +99,10 @@ function fitGrid(idx, W, box, tw, th) {
   return best;
 }
 
-export async function pixelize(asset) {
+// Returns the grid fit (0..1). With write=false it only scores, which is how candidates are ranked.
+export async function pixelize(asset, { src = `art/raw/${asset.id}.png`, write = true } = {}) {
   const [tw, th] = asset.size;
-  const { data, info } = await sharp(`art/raw/${asset.id}.png`).ensureAlpha().raw().toBuffer({ resolveWithObject: true });
+  const { data, info } = await sharp(src).ensureAlpha().raw().toBuffer({ resolveWithObject: true });
   const idx = indexImage(data, info.width, info.height, asset.key);
   const box = asset.key ? bbox(idx, info.width, info.height) : { x0: 0, y0: 0, w: info.width, h: info.height };
 
@@ -99,6 +121,7 @@ export async function pixelize(asset) {
     if (m.value >= 0) { const [r, g, b] = palette[m.value]; cells[o] = r; cells[o + 1] = g; cells[o + 2] = b; cells[o + 3] = 255; }
   }
   tilePurity /= grid.nx * grid.ny;
+  if (!write) return tilePurity;
 
   // Bottom-center anchor so every character's feet land on the same baseline.
   const out = await sharp({ create: { width: tw, height: th, channels: 4, background: { r: 0, g: 0, b: 0, alpha: 0 } } })
@@ -114,6 +137,7 @@ export async function pixelize(asset) {
 
   console.log(`pixelized ${asset.id}: ${grid.nx}x${grid.ny} cells on ${tw}x${th} canvas, grid fit ${(tilePurity * 100).toFixed(1)}%` +
     (tilePurity < 0.9 ? '  <-- low: art does not sit on a clean grid, regenerate' : ''));
+  return tilePurity;
 }
 
 if (import.meta.main) {

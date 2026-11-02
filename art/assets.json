@@ -1,14 +1,20 @@
 [
   {
     "id": "lbl_naked",
-    "size": [16, 24],
+    "size": [
+      16,
+      24
+    ],
     "key": true,
-    "prompt": "A small living cuboid creature: an upright rectangular block about 2 units wide and 3 units tall, skin-tone clay color, with two simple dot eyes near the top and a tiny neutral mouth. No arms, no legs, no clothing. It stands upright with a calm, curious presence. Side-ish front view showing the front face and a sliver of its right side in a darker shade."
+    "prompt": "A small living block creature shaped like a tall upright brick: a plain vertical rectangle about one and a half times taller than it is wide, flat bottom, smooth skin-tone clay color. Two small black dot eyes near the top of the front face and a tiny flat mouth. No arms, no legs, no feet, no clothing. Calm and curious."
   },
   {
     "id": "ground",
-    "size": [32, 32],
+    "size": [
+      32,
+      32
+    ],
     "key": false,
-    "prompt": "A seamless tileable square ground tile: top quarter is a strip of short green grass, the rest is brown packed earth with a few small pebbles. The tile must fill the entire canvas edge to edge and tile seamlessly horizontally. No magenta background for this asset."
+    "prompt": "Ground: the top quarter is short green grass, the rest is brown packed earth with a few small pebbles."
   }
 ]
