@@ -1,0 +1,22 @@
+{
+  "name": "lbl",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "concurrently -n sim,web \"npm:dev:server\" \"npm:dev:client\"",
+    "dev:server": "node --watch server/index.js",
+    "dev:client": "vite client",
+    "build": "vite build client --outDir ../dist",
+    "art": "node tools/gen-art.js",
+    "pixelize": "node tools/pixelize.js"
+  },
+  "dependencies": {
+    "ws": "^8.22.1"
+  },
+  "devDependencies": {
+    "concurrently": "^10.0.6",
+    "phaser": "^4.2.1",
+    "sharp": "^0.35.5",
+    "vite": "^8.3.5"
+  }
+}

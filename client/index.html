@@ -1,0 +1,24 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Language Based Lifeforms</title>
+  <style>
+    html, body { margin: 0; height: 100%; background: #181425; color: #ead4aa; font: 13px/1.4 ui-monospace, monospace; }
+    #game { display: flex; justify-content: center; align-items: center; height: 100%; }
+    #game canvas { image-rendering: pixelated; }
+    #card { position: fixed; pointer-events: none; display: none; max-width: 280px; padding: 10px 12px;
+            background: #262b44ee; border: 2px solid #5a6988; }
+    #card h3 { margin: 0 0 4px; color: #fee761; font-size: 14px; }
+    #card .bar { height: 4px; background: #3a4466; margin: 2px 0 6px; }
+    #card .bar i { display: block; height: 100%; background: #63c74d; }
+    #card .muted { color: #8b9bb4; }
+  </style>
+</head>
+<body>
+  <div id="game"></div>
+  <div id="card"></div>
+  <script type="module" src="./main.js"></script>
+</body>
+</html>
