@@ -39,7 +39,7 @@
       white-space: pre-wrap; font: 11px/1.4 ui-monospace, monospace; color: #ffd6a0; background: #000c; border: 1px solid #5a3c1c; border-radius: 6px; }
     .bubble { position: absolute; width: max-content; max-width: 250px; padding: 7px 10px 8px; border-radius: 12px; background: #04131dd9;
       border: 1px solid var(--c, var(--accent)); color: #e6f4f8; font: 12px/1.42 Fraunces, Georgia, serif;
-      box-shadow: 0 0 18px -6px var(--c, var(--accent)); transform: translate(-50%, -100%); transition: opacity 0.8s; }
+      box-shadow: 0 0 18px -6px var(--c, var(--accent)); transform: translate(-50%, -100%); transform-origin: 50% 100%; transition: opacity 0.8s; }
     .bubble b { display: block; font: 500 10px/1.2 Inter, sans-serif; letter-spacing: 0.04em; color: var(--c); margin-bottom: 2px; text-transform: uppercase; }
     .bubble.detached::after { display: none; }
     .bubble::after { content: ''; position: absolute; left: 50%; bottom: -6px; width: 10px; height: 10px; background: inherit;
@@ -167,7 +167,6 @@
       #app { flex-direction: column; }
       #tank { flex: none; height: 56vw; }
       #side { width: auto; flex: 1; min-height: 0; border-left: 0; border-top: 1px solid var(--line); }
-      .bubble { max-width: 180px; font-size: 10.5px; padding: 5px 7px; }
       #book .tome { width: 92vw; height: 84vh; padding: 8px; }
       #book .page { padding: 40px 24px 46px; }
       #book .measure { width: calc(92vw - 16px); height: 84vh; padding: 40px 24px 46px; }

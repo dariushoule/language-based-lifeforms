@@ -638,9 +638,13 @@ class Tank extends Phaser.Scene {
       if (!v || now > b.until + 900) { b.el.remove(); this.bubbles.delete(id); continue; }
       b.el.style.opacity = now > b.until ? '0' : '1';
       const p = this.toScreen(v.ex, v.screenTop ?? v.ey);
-      const w = b.el.offsetWidth, h = b.el.offsetHeight;
+      // Bubbles shrink with the tank (never grow past their own size), so on a phone they stay small
+      // and sit on their fish instead of crowding it off the screen.
+      const k = Math.min(1, this.game.canvas.getBoundingClientRect().width / W);
+      b.el.style.transform = `translate(-50%, -100%) scale(${k})`;
+      const w = b.el.offsetWidth * k, h = b.el.offsetHeight * k;
       const tankW = bubbleLayer.clientWidth;
-      let x = clamp(p.x, w / 2 + 4, tankW - w / 2 - 4), y = Math.max(h + 4, p.y - 10);
+      let x = clamp(p.x, w / 2 + 4, tankW - w / 2 - 4), y = Math.max(h + 4, p.y - 10 * k);
       for (const o of placed) if (Math.abs(o.x - x) < (o.w + w) / 2 && y > o.y - o.h - 6 && y - h < o.y + 6) y = o.y - o.h - 8;
       placed.push({ x, y, w, h });
       // Slid away from its fish (one swimming in or out at the edge): the tail would point at nothing.
