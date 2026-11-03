@@ -35,7 +35,7 @@ export function createBook(root) {
     const entry = (t, first) => {
       const parent = t.refines && byId.get(t.refines);
       // Where a teaching grew from an older one, the margin credits it the way books credit a source.
-      const source = t.refinesBy === t.by ? 'after an earlier thought of its own' : `after ${esc(t.refinesBy)}, who held that`;
+      const source = t.refinesBy === t.by ? 'After an earlier thought of its own:' : `After ${esc(t.refinesBy)}, who held that`;
       const margin = t.refinesText
         ? `<div class="margin">${source} “${esc(t.refinesText)}”${parent && parent.theme !== t.theme ? ` (see <i>On ${esc(title(parent.theme))}</i>)` : ''}</div>` : '';
       const holders = t.carriers.filter((c) => c.stance !== 'disputes').map((c) => c.name);
