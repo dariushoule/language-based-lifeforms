@@ -39,8 +39,14 @@ function serveFile(res, root, rel) {
     res.writeHead(200, { 'content-type': MIME[path.extname(file)] ?? 'application/octet-stream', ...cache }).end(data);
   });
 }
+// A request's path, or null if its target can't be parsed. `new URL` throws on targets such as '//['
+// (read as a host), and an exception here would take the whole sim down.
+function pathOf(req) {
+  try { return new URL(req.url, 'http://x').pathname; } catch { return null; }
+}
 const server = http.createServer((req, res) => {
-  const { pathname } = new URL(req.url, 'http://x');
+  const pathname = pathOf(req);
+  if (pathname == null) return res.writeHead(400).end();
   if (pathname.startsWith('/fish/')) return serveFile(res, SPRITE_DIR, pathname.slice(6));
   serveFile(res, STATIC_DIR, pathname === '/' ? 'index.html' : pathname);
 });
@@ -126,7 +132,7 @@ minds.on('connection', (ws, req) => {
 });
 
 server.on('upgrade', (req, socket, head) => {
-  const { pathname } = new URL(req.url, 'http://x');
+  const pathname = pathOf(req);
   if (pathname === '/ws') return viewers.handleUpgrade(req, socket, head, (ws) => viewers.emit('connection', ws, req));
   if (pathname === '/mind' && authorized(req)) return minds.handleUpgrade(req, socket, head, (ws) => minds.emit('connection', ws, req));
   socket.end('HTTP/1.1 401 Unauthorized\r\n\r\n');
