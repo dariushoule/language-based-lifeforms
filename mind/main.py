@@ -7,7 +7,8 @@ and falls back to instinct when the mind is slow, wrong or gone. This side only 
 Config (repo-root .env or environment):
   BRAIN_URL, BRAIN_KEY, BRAIN_MODEL   OpenAI-compatible endpoint (vLLM serving DS4, for instance)
   BRAIN_CF_ID, BRAIN_CF_SECRET        optional Cloudflare Access headers (for the public endpoint)
-  BRAIN_THINKING=1                    let the model reason before answering (slower)
+  BRAIN_THINKING=0                    answer without reasoning first (fast, but much worse at space)
+  BRAIN_THINK_BUDGET                  reasoning tokens per decision, default 1500 (about a minute)
   MIND_TOKEN                          shared secret the sim expects on /mind
   SIM_URL                             default ws://localhost:8080/mind
   MIND_CONCURRENCY                    parallel decisions, default 4
@@ -26,7 +27,7 @@ os.environ.setdefault("PYDANTIC_AI_NO_BANNER", "1")
 
 from openai import AsyncOpenAI
 from pydantic import BaseModel, Field
-from pydantic_ai import Agent, ModelSettings
+from pydantic_ai import Agent, ModelSettings, ToolOutput
 from pydantic_ai.models.openai import OpenAIChatModel
 from pydantic_ai.profiles.openai import OpenAIModelProfile
 from pydantic_ai.providers.openai import OpenAIProvider
@@ -46,6 +47,14 @@ def load_env(path: Path) -> None:
 
 
 load_env(Path(__file__).resolve().parent.parent / ".env")
+
+# Thinking (the model reasons privately before it answers) is much better at spatial problems like
+# stairs and getting unstuck, and takes tens of seconds per decision instead of a few.
+THINKING = os.environ.get("BRAIN_THINKING", "1") != "0"
+# Left alone, DS4 reasons for 8000+ tokens (4+ minutes). vLLM's thinking_token_budget ends the
+# reasoning at this many tokens and makes it answer; at ~30 tok/s, 1500 is about a minute.
+THINK_BUDGET = int(os.environ.get("BRAIN_THINK_BUDGET", "1500"))
+THINK_TIMEOUT = 240   # s; the sim gives up on a decision after 300
 
 # ---------- the plan the model must produce ----------
 
@@ -93,7 +102,7 @@ class Plan(BaseModel):
     # Thought comes first so the model says what it intends before choosing actions.
     thought: str = Field(description="your inner voice right now: first person, one or two short sentences")
     feeling: Literal["curious", "happy", "uneasy", "lonely", "sleepy"]
-    actions: list[Action] = Field(min_length=1, max_length=5, description="what to do, in order")
+    actions: list[Action] = Field(min_length=1, max_length=8, description="what to do, in order")
 
 
 INSTRUCTIONS = """\
@@ -105,18 +114,22 @@ How the world works:
 - Positions are x coordinates in pixels, from 0 to 640. The ground is flat.
 - Trees give wood one block at a time. A chopped-out tree is a stump that slowly regrows.
 - You can carry up to 8 wood blocks.
-- Wood blocks are 8x8 and stack in columns on an 8-pixel grid. You can stack a block on a column \
-or take the top block off one. You must stand beside the column (you can reach over one \
-neighboring column), and its top must be within about 5 blocks above your feet.
-- You can step up or down one block at a time, but can't climb anything taller: walking from \
-height 0 onto a stack 2 high is impossible. To get up high, build a staircase where each column \
-is exactly one block taller than the one before it (1, 2, 3, ...), and climb it from the low end. \
-block_heights_near_you shows the stack height of every column around you; your body spans 2 or 3 of them.
+- Wood blocks are 8x8 and stack in columns on an 8-pixel grid; block_heights_near_you gives the \
+height of every column around you. You are 2 columns wide: you stand on the tallest column under \
+you, and you can't fit down into a gap only 1 column wide. Your height is how many blocks up your feet are.
+- Walking, you can step up at most 1 block at a time, and drop down any height. Walking from the \
+ground onto a stack 2 high is impossible. can_walk says how far you could walk right now and what \
+stops you. To get higher, build a staircase where each column is exactly one block taller than \
+the one before it (1, 2, 3, ...) and climb it from the low end. To get past a wall, build a step \
+in front of it or take blocks off it.
+- You can stack a block on a column or take the top block off one while standing beside it (you \
+can reach over one neighboring column), if its top is at most 5 blocks above your feet and at most \
+3 below them.
 - Needs go from 0 (desperate) to 1 (satisfied). Resting restores energy; making things gives \
 meaning. There is no food yet, and no one else yet.
 
-Each time, you receive what you perceive, including your recent memory, and answer with a plan: \
-what you think, how you feel, and 1 to 5 actions to carry out in order. If an action fails, the \
+Each time, you receive what you perceive, including your recent memory, and answer by calling the \
+plan tool once: what you think, how you feel, and 1 to 8 actions to carry out in order. If an action fails, the \
 rest of the plan is dropped and you will be asked again with the failure in your memory, so learn \
 from it. chop_tree, place_block and take_block walk there by themselves; use walk_to only to go \
 somewhere for its own sake. Keep plans short and concrete, and refer to trees by their id. Your \
@@ -134,7 +147,7 @@ def build_agent() -> Agent[None, Plan]:
         base_url=os.environ["BRAIN_URL"],
         api_key=os.environ["BRAIN_KEY"],
         default_headers=headers,
-        timeout=40,
+        timeout=THINK_TIMEOUT if THINKING else 40,
         max_retries=0,  # the sim retries by asking again; a stuck request should just fail
     )
     model = OpenAIChatModel(
@@ -145,18 +158,25 @@ def build_agent() -> Agent[None, Plan]:
             openai_system_prompt_role="system",
             openai_supports_strict_tool_definition=False,
             openai_chat_thinking_field="reasoning",
+            # With thinking on, vLLM's forced (`required`) tool choice sometimes returns the plan inside
+            # the reasoning instead of as a tool call (4 of 6 tries); `auto` got it right 6 of 6.
+            supports_forced_tool_choice=not THINKING,
         ),
     )
-    thinking = os.environ.get("BRAIN_THINKING") == "1"
     return Agent(
         model,
-        output_type=Plan,
+        # Thinking models sometimes call an action (PlaceBlock, ...) as if it were its own tool; a plain
+        # tool name and description cut down those wasted retries.
+        output_type=ToolOutput(
+            Plan, name="plan", description="Answer with your whole plan. Call this exactly once; the actions inside it are not tools."
+        ),
         instructions=INSTRUCTIONS,
         retries=2,  # a malformed plan is sent back to the model with the validation error
         model_settings=ModelSettings(
-            max_tokens=4000 if thinking else 600,
+            max_tokens=THINK_BUDGET + 1000 if THINKING else 600,
             temperature=0.8,
-            extra_body={"chat_template_kwargs": {"thinking": thinking}},
+            extra_body={"chat_template_kwargs": {"thinking": THINKING}}
+            | ({"thinking_token_budget": THINK_BUDGET} if THINKING else {}),
         ),
     )
 

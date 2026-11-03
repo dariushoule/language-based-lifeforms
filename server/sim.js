@@ -18,8 +18,9 @@ const REACH_UP = 40;       // px above the feet a block's top may be placed at (
 const REACH_DOWN = 24;     // px below the feet a column's top may be worked at (3 blocks)
 const THINK_GAP = 2;       // s between finishing a plan and asking for the next
 const FAIL_GAP = 5;        // s to pause after an action fails
-const MIND_TIMEOUT = 45;   // s before a silent mind is ignored and instinct takes over
+const MIND_TIMEOUT = 300;  // s before a silent mind is ignored and instinct takes over (thinking is slow)
 const MEMORY = 40;         // remembered events per LBL
+const PLAN_MAX = 8;        // actions per plan
 
 export const ACTIONS = ['walk_to', 'chop_tree', 'place_block', 'take_block', 'rest'];
 export const FEELINGS = ['curious', 'happy', 'uneasy', 'lonely', 'sleepy'];
@@ -103,6 +104,39 @@ function overlapsColumn(e, c, x = e.x) {
   return x + e.w / 2 > c * CELL && x - e.w / 2 < (c + 1) * CELL;
 }
 
+const heightAt = (y) => Math.round((WORLD.groundY - y) / CELL);
+
+// The tallest column under the footprint at x: what you'd stand on, or bump into.
+function tallestUnder(world, e, x) {
+  let best = -1;
+  for (let c = Math.floor((x - e.w / 2) / CELL); c <= Math.ceil((x + e.w / 2) / CELL) - 1; c++)
+    if (c >= 0 && c < COLS && (best < 0 || world.cols[c] > world.cols[best])) best = c;
+  return best;
+}
+
+// Why walking onto x from height h is impossible, in words an LBL would use.
+function tooTall(world, e, x, h) {
+  const c = tallestUnder(world, e, x);
+  if (c < 0 || world.cols[c] <= h + 1) return 'something is in my way';
+  return `the stack at x=${colCenter(c)} is ${world.cols[c]} high and I'm at height ${h}; I can only step up 1`;
+}
+
+// How far an LBL could walk each way right now, following the same rules as physics(): step up at
+// most one block, drop any distance. This is what it would see at a glance, so minds get it too.
+function walkRange(world, e) {
+  const probe = (dir) => {
+    let x = Math.round(e.x), y = e.y;
+    for (;;) {
+      const nx = x + dir;
+      if (nx < e.w / 2 || nx > WORLD.width - e.w / 2) return { x, stop: 'the edge of the world' };
+      const floor = floorUnder(world, e, nx);
+      if (floor < y - CELL - 1e-6) return { x, stop: tooTall(world, e, nx, heightAt(y)) };
+      x = nx; y = floor;
+    }
+  };
+  return { left: probe(-1), right: probe(1) };
+}
+
 // A repeat of the latest memory just bumps its count, so a stuck LBL can't flood its memory.
 function remember(world, e, text) {
   const last = e.memory.at(-1);
@@ -122,7 +156,7 @@ function physics(world, e, dt) {
     else if (e.grounded && floorUnder(world, e, nx) >= e.y - CELL && !solidAt(world, e, nx, floorUnder(world, e, nx))) {
       e.x = nx;                       // step up onto a single block
       e.y = floorUnder(world, e, nx);
-    } else e.blocked = true;
+    } else { e.blocked = true; e.blockedAt = nx; }
   }
   const floor = floorUnder(world, e);
   e.vy += WORLD.gravity * dt;
@@ -134,11 +168,11 @@ function physics(world, e, dt) {
 
 // Moves toward x; true once there, or once a wall stops us if we're already closeEnough().
 // Otherwise a wall fails the action.
-function approach(e, x, dt, closeEnough) {
+function approach(world, e, x, dt, closeEnough) {
   const dx = x - e.x;
   if (Math.abs(dx) < 0.01) { e.x = x; e.vx = 0; return true; }
   if (e.blocked && closeEnough?.()) { e.vx = 0; return true; }
-  if (e.blocked) throw new Error(`a wall of blocks blocks my way near x=${Math.round(e.x + Math.sign(dx) * 12)}`);
+  if (e.blocked) throw new Error(tooTall(world, e, e.blockedAt, heightAt(e.y)));
   // The last step is sized to land exactly on x (it still goes through collision).
   e.vx = Math.sign(dx) * Math.min(WALK_SPEED, Math.abs(dx) / dt);
   return false;
@@ -162,7 +196,7 @@ function standBeside(e, c) {
 
 const RUN = {
   walk_to(world, e, a, dt) {
-    return approach(e, a.x, dt);
+    return approach(world, e, a.x, dt);
   },
 
   chop_tree(world, e, a, dt) {
@@ -178,7 +212,7 @@ const RUN = {
     }
     a.stand ??= Math.abs(e.x - (tree.x - 12)) < Math.abs(e.x - (tree.x + 12)) ? tree.x - 12 : tree.x + 12;
     // Anywhere within arm's reach of the trunk will do if blocks stand where we'd like to be.
-    if (!approach(e, a.stand, dt, () => Math.abs(e.x - tree.x) <= 20)) return false;
+    if (!approach(world, e, a.stand, dt, () => Math.abs(e.x - tree.x) <= 20)) return false;
     tree.choppedBy = e.id;
     a.work = (a.work ?? 0) + dt;
     if (a.work < CHOP_SECS) return false;
@@ -200,7 +234,7 @@ const RUN = {
     if (e.carrying.wood <= 0) throw new Error('I have no wood to place');
     if (world.cols[c] >= MAX_STACK) throw new Error(`the stack at x=${colCenter(c)} is as tall as it can get`);
     a.stand ??= standBeside(e, c);
-    if (!approach(e, a.stand, dt, () => inReach(e, c))) return false;
+    if (!approach(world, e, a.stand, dt, () => inReach(e, c))) return false;
     const top = colTop(world, c) - CELL;
     if (top < e.y - REACH_UP) throw new Error(`the top of the stack at x=${colCenter(c)} is out of reach from here`);
     if (colTop(world, c) > e.y + REACH_DOWN) throw new Error(`the ground at x=${colCenter(c)} is too far below me`);
@@ -225,7 +259,7 @@ const RUN = {
     if (!world.cols[c]) throw new Error(`there are no blocks at x=${colCenter(c)}`);
     if (e.carrying.wood >= CARRY_LIMIT) throw new Error(`my arms are full (${CARRY_LIMIT} wood)`);
     a.stand ??= standBeside(e, c);
-    if (!approach(e, a.stand, dt, () => inReach(e, c))) return false;
+    if (!approach(world, e, a.stand, dt, () => inReach(e, c))) return false;
     if (colTop(world, c) < e.y - REACH_UP) throw new Error(`the top of the stack at x=${colCenter(c)} is out of reach from here`);
     const row = --world.cols[c];
     const block = world.blocks.get(`${c},${row}`);
@@ -286,7 +320,7 @@ export function perceive(world, e) {
   return {
     you: {
       id: e.id, name: e.name, background: e.background, x: Math.round(e.x),
-      standing_on: e.y < WORLD.groundY ? `blocks, ${Math.round((WORLD.groundY - e.y) / CELL)} high` : 'the ground',
+      height: heightAt(e.y),
       carrying_wood: e.carrying.wood, carry_limit: CARRY_LIMIT,
       needs: Object.fromEntries(Object.entries(e.needs).map(([k, v]) => [k, r2(v)])),
       feeling: e.emotion, age_seconds: Math.round((Date.now() - e.bornAt) / 1000),
@@ -298,6 +332,8 @@ export function perceive(world, e) {
     })),
     structures,
     block_heights_near_you: terrain.join(', '),
+    can_walk: (({ left, right }) =>
+      `from x=${left.x} to x=${right.x} without building. Further left: ${left.stop}. Further right: ${right.stop}.`)(walkRange(world, e)),
     others: lbls(world).filter((o) => o !== e).map((o) => ({ id: o.id, name: o.name, x: Math.round(o.x), feeling: o.emotion, doing: describeAction(o.action) })),
     memory: e.memory.slice(-12).map((m) => `${Math.round(world.time - m.at)}s ago: ${recall(m)}`),
     last_thought: e.thought,
@@ -309,7 +345,7 @@ export function applyPlan(world, msg) {
   const e = world.entities.find((x) => x.id === msg.id && x.kind === 'lbl');
   if (!e || msg.seq !== e.seq || e.awaiting == null) return false;
   e.awaiting = null;
-  const actions = (Array.isArray(msg.actions) ? msg.actions : []).slice(0, 6).map(normalizeAction)
+  const actions = (Array.isArray(msg.actions) ? msg.actions : []).slice(0, PLAN_MAX).map(normalizeAction)
     .filter((a) => a && Object.values(a).every((v) => v != null));
   if (typeof msg.thought === 'string' && msg.thought.trim()) e.thought = msg.thought.trim().slice(0, 280);
   e.feeling = FEELINGS.includes(msg.feeling) ? msg.feeling : null;

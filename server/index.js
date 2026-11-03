@@ -42,7 +42,10 @@ function authorized(req) {
   return MIND_TOKEN && got.length === want.length && crypto.timingSafeEqual(got, want);
 }
 minds.on('connection', (ws, req) => {
-  if (world.mind) world.mind.ws.close(4000, 'replaced by a newer mind');
+  if (world.mind) {
+    world.mind.ws.close(4000, 'replaced by a newer mind');
+    mindLost(world); // the old mind won't answer what it was asked, so ask again
+  }
   const mind = { ws, send: (msg) => ws.readyState === ws.OPEN && ws.send(JSON.stringify(msg)) };
   world.mind = mind;
   console.log(`mind connected from ${req.socket.remoteAddress}`);
