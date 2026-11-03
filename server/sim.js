@@ -182,7 +182,6 @@ function enter(world, arr) {
     thought: 'Where the water ends, there was more water. And now: light.', reasoning: '',
     plan: [{ type: 'swim_to', x: side < 0 ? rand(140, 360) : WORLD.width - rand(140, 360), y }], action: null,
     brain: 'arriving', seq: 0, awaiting: null, nextThinkAt: world.time + 5, rethinkAt: null, talk: null,
-    origins: (p.memories ?? []).map((m) => String(m).slice(0, 240)).slice(0, 4),
     memory: [], heard: [], impressions: {}, lore: arr.lore.filter((l) => world.lore.has(l.id)).map((l) => ({ ...l, at: world.time, stance: 'holds' })),
     said: null, kills: 0, seeds: [], bitAt: -1e9, bitBy: null, farewelled: false, successor: null,
   };
@@ -233,6 +232,15 @@ function gone(world, f, cause) {
   world.entities.splice(world.entities.indexOf(f), 1);
   world.store.putFish(fishRecord(f, cause));
   pruneLore(world);
+}
+
+// What a fish remembers of its life before the tank: whole sentences, only trimmed (at a word,
+// with an ellipsis) if the mind wrote something far longer than asked.
+function glimmers(f) {
+  return (f.persona?.memories ?? []).slice(0, 4).map((m) => {
+    const t = String(m).replace(/\s+/g, ' ').trim();
+    return t.length <= 500 ? t : `${t.slice(0, 500).replace(/\s+\S*$/, '')}…`;
+  });
 }
 
 // Two living fish never share a name, so minds can tell them apart.
@@ -880,7 +888,7 @@ function perceive(world, f) {
     you: {
       id: f.id, name: f.name, voice: f.persona.voice, voice_sample: f.persona.voice_sample,
       generation: f.gen, personality: f.persona.personality, desire: f.persona.desire, philosophy: f.persona.philosophy,
-      ...(f.origins?.length ? { memories_from_beyond_the_edge: f.origins } : {}),
+      ...(glimmers(f).length ? { memories_from_beyond_the_edge: glimmers(f) } : {}),
       ...(f.composedAt != null ? { last_set_down_a_teaching: `${Math.round(world.time - f.composedAt)}s ago${world.time - f.composedAt < COMPOSE_GAP ? ' (too soon for another; talk it over first)' : ''}` } : {}),
       time_in_tank: minutes(ageOf(world, f)), life_stage: stage(world, f),
       size: r2(f.size), health: healthWord(f.health), x: Math.round(f.x), y: Math.round(f.y),
@@ -1156,7 +1164,7 @@ function view(world, e, full) {
       };
       if (full) Object.assign(v, {
         persona: { personality: e.persona.personality, desire: e.persona.desire, philosophy: e.persona.philosophy, temperament: e.persona.temperament },
-        origins: e.origins ?? [],
+        origins: glimmers(e),
         article: e.article && { title: e.article.title, url: e.article.url },
         predecessorName: e.predecessorName, kills: e.kills,
         plan: e.plan.map((a) => describeAction(world, a)), reasoning: e.reasoning.slice(-500),
