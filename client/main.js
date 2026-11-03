@@ -392,6 +392,7 @@ class Tank extends Phaser.Scene {
   update(time, dtMs) {
     const t = time / 1000;
     const dt = dtMs / 1000;
+    tickClock();
     this.animateWater(t, dt);
     this.podGlow.begin(); this.floorGlow.begin(); this.halos.begin(); this.shadows.begin();
     const k = 1 - Math.exp(-dtMs / 90);
@@ -660,7 +661,7 @@ function renderCodex(s) {
   const plants = all.filter((e) => e.kind === 'plant' && e.genome && e.state !== 'dead').sort((a, b) => a.x - b.x);
   const kin = (f, gone) => `<div class="kin${gone ? ' gone' : ''}" data-entry="${f.id}">${f.sprite ? `<img src="${esc(f.sprite)}" alt="">` : '<img alt="">'}
     <div><div class="name" style="color:${esc(f.glow ?? '#9fd8ea')}">${esc(f.name)}</div>
-    <div class="meta">generation ${f.gen}${f.predecessorName ? ` · followed ${esc(f.predecessorName)}` : ''}${gone ? ` · ${esc(f.cause ?? 'swam out')}` : ` · ${span(f.age)} in the tank`}</div>
+    <div class="meta">generation ${f.gen}${f.predecessorName ? ` · followed ${esc(f.predecessorName)}` : ''}${gone ? ` · ${esc(f.cause ?? 'swam out')}` : ''}</div>
     ${f.persona?.philosophy ? `<div class="phil">${esc(f.persona.philosophy)}</div>` : ''}</div></div>`;
   const plant = (e) => `<div class="kin" data-entry="${e.id}"><div class="swatch"><i style="background:${plantColor2(e.genome)};color:${plantColor2(e.genome)}"></i><i style="background:${plantColor(e.genome)};color:${plantColor(e.genome)}"></i></div>
     <div><div class="name" style="color:${plantColor(e.genome)}">${esc(cap(e.name))}</div><div class="meta">${plantState(e)}</div></div></div>`;
@@ -770,7 +771,7 @@ function fishEntry(s, e) {
   return back +
     (e.sprite ? `<img class="portrait" src="${esc(e.sprite)}" alt="" style="--c:${esc(e.glow ?? '#7fe0ff')}">` : '') +
     `<h2 style="--c:${esc(e.glow ?? '#7fe0ff')}">${esc(e.name)}</h2>` +
-    `<div class="muted">generation ${e.gen}${e.predecessorName ? `, followed ${esc(e.predecessorName)}` : ''} · ${esc(p.temperament ?? '')}${live ? ` · ${span(e.age)} in the tank · feels ${esc(e.emotion)}` : ''}</div>` +
+    `<div class="muted">generation ${e.gen}${e.predecessorName ? `, followed ${esc(e.predecessorName)}` : ''} · ${esc(p.temperament ?? '')}${live ? ` · feels ${esc(e.emotion)}` : ''}</div>` +
     (e.article ? `<div class="muted">born of <a href="${esc(e.article.url)}" target="_blank" rel="noopener" style="color:inherit">${esc(e.article.title)}</a></div>` : '') +
     (p.philosophy ? `<p class="phil">${esc(p.philosophy)}</p>` : '') +
     `<p>${esc(p.personality)}</p>` + (p.desire ? `<p class="muted">Wants: ${esc(p.desire)}</p>` : '') +
@@ -782,14 +783,27 @@ function fishEntry(s, e) {
     ((e.origins ?? p.memories)?.length ? `<div class="sec">Glimmers of Memory</div><ul>${(e.origins ?? p.memories).map((m) => `<li>${esc(m)}</li>`).join('')}</ul>` : '');
 }
 
+// The subtitle is a clock of tank time since genesis, ticking smoothly between snapshots.
 const status = document.getElementById('status');
+const clockFace = { time: 0, at: 0, live: false, shown: '' };
+const CLOCK_ICON = '<svg viewBox="0 0 16 16" aria-hidden="true"><circle cx="8" cy="8" r="6.5"/><path d="M8 4.2V8l2.6 1.6"/></svg>';
 function updateStatus(s) {
-  let fish = 0, plants = 0, gen = 0;
-  for (const e of s.ents.values()) {
-    if (e.kind === 'fish' && !e.leaving) { fish++; gen = Math.max(gen, e.gen); }
-    if (e.kind === 'plant' && e.state !== 'dead') plants++;
-  }
-  status.textContent = `${fish} fish · ${plants} plants · generation ${gen || 1} · tank time ${span(s.state.time)}`;
+  if (!clockFace.live) { status.innerHTML = `<span class="clock">${CLOCK_ICON}<b></b><i>since genesis</i></span>`; clockFace.shown = ''; }
+  Object.assign(clockFace, { time: s.state.time, at: performance.now(), live: true });
+  tickClock();
+}
+function tickClock() {
+  if (!clockFace.live) return;
+  // Run on from the last snapshot, but not more than a few seconds past it.
+  const t = Math.floor(clockFace.time + Math.min(3, (performance.now() - clockFace.at) / 1000));
+  const text = `${Math.floor(t / 3600)}:${String(Math.floor(t / 60) % 60).padStart(2, '0')}:${String(t % 60).padStart(2, '0')}`;
+  if (text === clockFace.shown) return;
+  clockFace.shown = text;
+  status.querySelector('b').textContent = text;
+}
+function statusNote(text) {
+  clockFace.live = false;
+  status.textContent = text;
 }
 
 // The compendium arrives whole once, then as the teachings that changed (server/delta.js).
@@ -824,7 +838,7 @@ function connect(s) {
     if (socket !== ws) return;
     socket = null;
     if (document.hidden) return;
-    status.textContent = 'reconnecting…';
+    statusNote('reconnecting…');
     const wait = Math.min(30000, 1500 * 2 ** retries++) * (0.5 + Math.random());
     setTimeout(() => connect(s), wait);
   };
@@ -836,7 +850,7 @@ document.addEventListener('visibilitychange', () => {
       const ws = socket;
       socket = null;
       ws?.close();
-      status.textContent = 'paused while hidden';
+      statusNote('paused while hidden');
     }, HIDDEN_GRACE);
   } else if (!socket && scene) connect(scene);
 });
