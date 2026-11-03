@@ -21,7 +21,7 @@ const DATA_DIR = path.resolve(process.env.DATA_DIR ?? 'data');
 const SPRITE_DIR = path.join(DATA_DIR, 'fish');
 const MIND_TOKEN = process.env.MIND_TOKEN ?? '';
 
-const MIME = { '.html': 'text/html', '.js': 'text/javascript', '.css': 'text/css', '.png': 'image/png', '.json': 'application/json', '.svg': 'image/svg+xml' };
+const MIME = { '.html': 'text/html', '.js': 'text/javascript', '.css': 'text/css', '.png': 'image/png', '.jpg': 'image/jpeg', '.jpeg': 'image/jpeg', '.webp': 'image/webp', '.ico': 'image/x-icon', '.json': 'application/json', '.svg': 'image/svg+xml' };
 
 const store = openStore(path.join(DATA_DIR, 'aquarium.db'));
 const saved = store.loadWorld();
