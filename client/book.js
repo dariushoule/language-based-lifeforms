@@ -39,9 +39,8 @@ export function createBook(root) {
       const holders = t.carriers.filter((c) => c.stance !== 'disputes').map((c) => c.name);
       const doubters = t.carriers.filter((c) => c.stance === 'disputes').map((c) => c.name);
       const notes = [
-        holders.length ? `Carried now by ${esc(list(holders))}.` : 'No living fish carries this; it survives only in these pages.',
+        holders.length ? `Carried now by ${esc(list(holders))}.` : '',
         doubters.length ? `Disputed by ${esc(list(doubters))}.` : '',
-        t.agreed > 1 || t.disputed ? `Embraced by ${t.agreed}${t.disputed ? `, disputed by ${t.disputed}` : ''}, told ${t.told} time${t.told === 1 ? '' : 's'}.` : '',
       ].filter(Boolean).join(' ');
       return `<div class="entry${holders.length ? '' : ' faded'}${first ? ' first' : ''}" data-id="${t.id}" style="--ink:${esc(t.glow ?? '#7a4b2a')}">` +
         `<p>${esc(t.text)}</p><div class="sig">— ${esc(t.by)}, ${generation(t.gen)}</div>${margin}<div class="note">${notes}</div></div>`;

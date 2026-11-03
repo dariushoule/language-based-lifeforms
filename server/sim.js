@@ -264,6 +264,7 @@ function fallbackPersona(arr) {
     personality: `Arrived with a head full of half-remembered ${subject}. Quiet, watchful, and stubborn about it.`,
     voice: 'Short, plain sentences.', voice_sample: 'Water. More water. Then you.', desire: `To find out what ${subject} means.`, philosophy: 'Everything that glows is asking a question.',
     memories: ['Out beyond the edge there was a long dark current, and something in it you still cannot name.'],
+    images: ['the dark current', 'a glow far off', 'the cold of open water'],
     temperament: 'gentle',
   };
 }
@@ -743,7 +744,7 @@ function describeMandala(world) {
   }
   const laid = Object.keys(m.cells).length;
   return {
-    number: m.number, laid: `${laid} of ${mandalaCells()} places filled`,
+    number: m.number, laid: laid === 0 ? 'bare: no grain laid yet' : laid < mandalaCells() * 0.3 ? 'barely begun' : laid < mandalaCells() * 0.7 ? 'half laid' : laid < mandalaCells() ? 'nearly complete' : 'complete',
     ...(m.completedAt != null ? { finished: `complete; its sand will fall in ${minutes(Math.max(0, MANDALA.admire - (world.time - m.completedAt)))}` } : {}),
     rings, sand_colors: SAND_NAMES.join(', '),
   };
@@ -897,6 +898,7 @@ function perceive(world, f) {
     you: {
       id: f.id, name: f.name, voice: f.persona.voice, voice_sample: f.persona.voice_sample,
       generation: f.gen, personality: f.persona.personality, desire: f.persona.desire, philosophy: f.persona.philosophy,
+      ...(f.persona.images?.length ? { images: f.persona.images } : {}),
       ...(glimmers(f).length ? { memories_from_beyond_the_edge: glimmers(f) } : {}),
       ...(f.composedAt != null ? { last_set_down_a_teaching: `${Math.round(world.time - f.composedAt)}s ago${world.time - f.composedAt < COMPOSE_GAP ? ' (too soon for another; talk it over first)' : ''}` } : {}),
       time_in_tank: minutes(ageOf(world, f)), life_stage: stage(world, f),
@@ -931,7 +933,8 @@ function perceive(world, f) {
       id: l.id, text: l.text, theme: l.theme,
       origin: l.originId === f.id ? 'yours' : `${l.originName} (generation ${l.originGen})`,
       ...(l.refinesText ? { reworks: `${l.refinesBy}'s "${l.refinesText.length > 90 ? l.refinesText.slice(0, 90) + '…' : l.refinesText}"` } : {}),
-      learned_from: k.from, your_stance: k.stance, embraced_by: l.agreed?.length ?? 0, disputed_by: l.disputed?.length ?? 0,
+      learned_from: k.from, your_stance: k.stance,
+      ...((l.agreed?.length ?? 0) > 1 ? { embraced_by_others: true } : {}), ...((l.disputed?.length ?? 0) > 0 ? { disputed_by_some: true } : {}),
     })),
     ...(remembered.length ? { fish_you_remember: remembered } : {}),
     recent_thoughts: f.thoughts?.length ? f.thoughts.map((t) => `${ago(t.at)}: ${t.text}`) : [f.thought],

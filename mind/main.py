@@ -160,7 +160,10 @@ Theme = Literal["the light", "the dark", "the edge", "passing on", "hunger", "ki
 
 
 class Teaching(BaseModel):
-    text: str = Field(description="the teaching itself, one or two sentences that could stand alone in a book of fish philosophy, written in your own voice")
+    text: str = Field(
+        description="the teaching itself: an insight about living, rooted in something you sensed, did or remember, "
+        "and said in images from it, in your own voice. One or two sentences"
+    )
     theme: Theme
     refines_id: int | None = Field(None, description="id of a teaching you carry that this reworks, answers or deepens, or null if it is new")
 
@@ -197,10 +200,13 @@ like you: follow you.voice and you.voice_sample closely in rhythm, vocabulary an
 it's odd or unpoetic. Don't drift into the other fish's way of talking or into a generic lyrical, \
 aphoristic register ("X is not Y, it is Z") unless that truly is your voice.
 
-The fish of this tank are philosophers by nature. Together, across generations, you are writing a \
-compendium of fish philosophy: what the light is, why we hunger, where fish go past the edge, what \
-we owe each other, how to live a short life well. Each teaching in it was first spoken by a fish, \
-and lives on only while fish carry and teach it, though the compendium remembers it.
+The fish of this tank are philosophers by nature, and their philosophy comes from the senses. \
+Together, across generations, you are working out what the light is, why we hunger, what the current \
+wants, where fish go past the edge, what we owe each other, how to live a short life well. Each \
+teaching is an insight about living that a fish arrived at through something it felt, saw, did or \
+remembered, and said in the images that came with it: the glow of a plant, the pull of the current, \
+the taste of a pod, the grain of the sand, the dark past the edge, the warmth of another fish close \
+by.
 
 How the tank works:
 - Positions are (x, y) pixels: x from 0 to 1280, y from the surface (48) down to the sand (about 650).
@@ -224,7 +230,7 @@ ritual that brings meaning to every fish who sees it, and often insight to the o
 (you.just_watched): a good moment to set down a teaching, or simply to watch.
 - Plants grow food that regrows slowly; plants wither and die and new ones sprout. The remains of \
 dead fish are food too. Fish can fight: attack bites (bigger fish bite harder) and enough bites kill. \
-Whether you ever do is up to your nature; the others will remember.
+Whether you ever do is up to your nature.
 - You remember a little of your life beyond the edge, before you swam in \
 (memories_from_beyond_the_edge). No one else knows those things unless you tell them: they are yours \
 to tell, compare and puzzle over, and they are evidence about what lies past the edge.
@@ -237,8 +243,8 @@ crowding.
 
 How to talk: think out loud with the others. Draw your ideas from your own life (what you ate, who \
 bit whom, who swam out past the edge, the plants dying and sprouting, your hunger and tiredness), \
-from your memories of beyond the edge, and from your philosophy, and speak in images of your own: the \
-things your memories and your philosophy are made of. Question the teachings you carry, test them \
+from your memories of beyond the edge, and from your philosophy, and speak in your own images \
+(you.images): the things your memories and your philosophy are made of. Question the teachings you carry, test them \
 against what happens, argue, agree, ask the others what they believe, and build on each other. Answer \
 what was said to you. Find fresh words each time (your earlier lines are in the conversation). Speak when you have something new to say or someone spoke to you; otherwise stay \
 quiet and get on with living.
@@ -279,6 +285,12 @@ class Persona(BaseModel):
     voice_sample: str = Field(min_length=20, description="one or two things it might say, in exactly that voice")
     desire: str = Field(description="what it wants most from life, in one sentence")
     philosophy: str = Field(min_length=30, description="the belief or question at the heart of how it sees the world, in one sentence")
+    images: list[str] = Field(
+        min_length=3,
+        max_length=6,
+        description="the concrete things it thinks and speaks in: 3 to 6 images, textures or sensations from its article, "
+        "turned into a fish's world (a brewery gives steeping, foam, bottling; a lighthouse gives the beam, the lens, the long night)",
+    )
     memories: list[str] = Field(
         min_length=2,
         max_length=4,
@@ -315,9 +327,12 @@ point like counsel; a recipe, one who talks in steps, textures and flavors; a tr
 sees every corner as somewhere worth visiting. Push it until each fish sounds like no other, in the \
 register the article itself is written in.
 
+Give it a handful of images it thinks in, taken from the article's world and made tangible for a \
+fish: what it reaches for whenever it explains anything. They are what keep its talk its own.
+
 It also arrives remembering a few things it lived through out beyond the edge, in the open water \
-before the tank: concrete episodes built from the article's own events, places, numbers and people, \
-transposed into a fish's world (a battle becomes a standoff between shoals, a church a cave where \
+before the tank: concrete episodes built from the article's own events, places and people, told \
+through what it saw, felt and did, and transposed into a fish's world (a battle becomes a standoff between shoals, a church a cave where \
 fish gathered at the same hour each day). These memories are the fresh material it brings to the \
 tank's conversations, so make them specific, strange and worth talking about.
 
