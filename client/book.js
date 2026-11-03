@@ -73,7 +73,7 @@ export function createBook(root) {
     if (!data) return;
     const { out, chapters } = blocks();
     const body = flow(out);
-    const front = 4; // endpaper, title, contents, a note on the keeping
+    const front = 3; // endpaper, title, contents
     const starts = new Map();
     body.forEach((p, i) => { if (!starts.has(p.chapter)) starts.set(p.chapter, front + i); });
     const best = data.teachings.slice().sort((a, b) => b.standing - a.standing)[0];
@@ -83,10 +83,9 @@ export function createBook(root) {
       { html: `<div class="titlepage"><div class="small">being the</div><h1>Compendium<br><span>of the Tank</span></h1><div class="orn">❦</div>` +
         `<div class="small">${data.total ? `teachings of ${fish} fish, set down over ${gens} generation${gens === 1 ? '' : 's'}, and kept here though their tellers are gone` : 'in which nothing has yet been set down'}</div></div>` },
       { html: `<h3 class="contents-head">Contents</h3><ol class="contents">${chapters.map((th) => `<li data-goto="${starts.get(th)}"><span>On ${esc(title(th))}</span><i></i><b>${starts.get(th) + 1}</b></li>`).join('')}</ol>`, running: 'Contents' },
-      { html: `<div class="keeping"><h3>A Note on the Keeping</h3><p>Every fish of the tank lives a few minutes. In that time some of them put a thought into words, and others carry it, quarrel with it, or work it into something new.</p><p>This book keeps all of it. Where a teaching answers an older one, the margin says so. Where no living fish still carries a teaching, its ink is fading.</p><p class="tally">${data.total} teaching${data.total === 1 ? '' : 's'} so far.</p></div>` },
       ...body.map((p) => ({ ...p, running: `On ${title(p.chapter)}` })),
     ];
-    if (pages.length % 2) pages.push({ html: '<div class="endpaper"></div>' });
+    if (pages.length % 2) pages.push({ html: '<div class="endpaper"></div>', blank: true }); // keeps spreads even
     dirty = false;
   }
 
@@ -102,7 +101,7 @@ export function createBook(root) {
       const p = pages[i] ?? { html: '' };
       side.querySelector('.body').innerHTML = p.html;
       side.querySelector('.running').textContent = p.running ?? '';
-      side.querySelector('.folio').textContent = i >= 2 && p.html ? i + 1 : '';
+      side.querySelector('.folio').textContent = i >= 2 && p.html && !p.blank ? i + 1 : '';
     });
     root.querySelector('.prev').disabled = spread === 0;
     root.querySelector('.next').disabled = (spread + 1) * n >= pages.length;
