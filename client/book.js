@@ -117,6 +117,15 @@ export function createBook(root) {
   }
   const goToPage = (i) => { spread = Math.floor(i / perSpread()); render(); };
 
+  // Swiping the page turns it, like a real book under a finger.
+  let touch = null;
+  tome.addEventListener('touchstart', (ev) => { const t = ev.touches[0]; touch = { x: t.clientX, y: t.clientY }; }, { passive: true });
+  tome.addEventListener('touchend', (ev) => {
+    if (!touch) return;
+    const t = ev.changedTouches[0], dx = t.clientX - touch.x, dy = t.clientY - touch.y;
+    touch = null;
+    if (Math.abs(dx) > 40 && Math.abs(dx) > Math.abs(dy) * 1.5) turn(dx < 0 ? 1 : -1);
+  });
   root.querySelector('.prev').onclick = () => turn(-1);
   root.querySelector('.next').onclick = () => turn(1);
   root.querySelector('.close').onclick = () => api.close();

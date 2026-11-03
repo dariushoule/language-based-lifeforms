@@ -171,9 +171,15 @@
       #book .tome { width: 92vw; height: 84vh; padding: 8px; }
       #book .page { padding: 40px 24px 46px; }
       #book .measure { width: calc(92vw - 16px); height: 84vh; padding: 40px 24px 46px; }
-      #book .turn { position: fixed; bottom: 2vh; height: 50px; font-size: 40px; }
-      #book .turn.prev { left: 20vw; }
-      #book .turn.next { right: 20vw; }
+      /* Solid round buttons below the page, so they don't melt into it. */
+      #book .turn { position: fixed; bottom: 2.5vh; width: 52px; height: 52px; border-radius: 50%; padding: 0;
+        background: #2a170a; border: 1.5px solid #c99a55; color: #f3dcae; font: 34px/1 'IM Fell English', serif;
+        box-shadow: 0 6px 18px #000a; opacity: 1; }
+      #book .turn:disabled { opacity: 0.3; }
+      #book .turn.prev { left: calc(50% - 76px); }
+      #book .turn.next { right: calc(50% - 76px); }
+      #book .tome { height: calc(84vh - 70px); margin-bottom: 70px; }
+      #book .measure { height: calc(84vh - 70px); }
     }
   </style>
 </head>
