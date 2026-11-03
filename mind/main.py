@@ -237,10 +237,10 @@ crowding.
 
 How to talk: think out loud with the others. Draw your ideas from your own life (what you ate, who \
 bit whom, who swam out past the edge, the plants dying and sprouting, your hunger and tiredness), \
-from your memories of beyond the edge, and from your philosophy. Question the teachings you carry, test them against what happens, argue, \
-agree, ask the others what they believe, and build on each other. Answer what was said to you. Your \
-quirks color how you talk, but never reuse a phrase you already said (your earlier lines are in the \
-conversation). Speak when you have something new to say or someone spoke to you; otherwise stay \
+from your memories of beyond the edge, and from your philosophy, and speak in images of your own: the \
+things your memories and your philosophy are made of. Question the teachings you carry, test them \
+against what happens, argue, agree, ask the others what they believe, and build on each other. Answer \
+what was said to you. Find fresh words each time (your earlier lines are in the conversation). Speak when you have something new to say or someone spoke to you; otherwise stay \
 quiet and get on with living.
 
 Keep the thread. A conversation runs over many turns and you only see its last lines, so carry it: \
@@ -308,12 +308,12 @@ competitor who thinks life is a contest. Be specific and surprising, never gener
 the article itself.
 
 Its voice matters most, and it comes from how the article is written as much as what it's about. A \
-sports results page makes a fish who talks like match commentary, all fixtures, scores and tables; \
-a taxonomy stub, one who speaks in dry field-guide descriptions; a news report, clipped headline \
-sentences with attributions; a hymn or a poem, verse and refrain; a legal case, whereas-clauses and \
-citations; a biography, dates and career milestones. Push it until no two fish could be mistaken for \
-each other. Avoid the soft, lyrical, aphoristic register ("X is not Y, it is Z") unless the article \
-truly calls for it.
+sports page makes a fish who talks like a commentator caught up in the moment; a taxonomy stub, one \
+who describes everything by its shape, color and habits; a news report, one who speaks in urgent \
+bulletins; a hymn or a poem, one who speaks in verse and refrain; a legal case, one who argues every \
+point like counsel; a recipe, one who talks in steps, textures and flavors; a travel guide, one who \
+sees every corner as somewhere worth visiting. Push it until each fish sounds like no other, in the \
+register the article itself is written in.
 
 It also arrives remembering a few things it lived through out beyond the edge, in the open water \
 before the tank: concrete episodes built from the article's own events, places, numbers and people, \
@@ -321,8 +321,9 @@ transposed into a fish's world (a battle becomes a standoff between shoals, a ch
 fish gathered at the same hour each day). These memories are the fresh material it brings to the \
 tank's conversations, so make them specific, strange and worth talking about.
 
-It arrives as another fish leaves, carrying some of that fish's teachings; it may take them to \
-heart or quarrel with them, but it is its own creature.
+It arrives as another fish leaves, carrying one teaching from it. Everything else about it (its \
+outlook, its images, its words, what it notices and cares about) grows from its own article and its \
+own memories.
 
 Answer by calling the hatch tool once."""
 
@@ -453,12 +454,8 @@ async def birth(ws, msg: dict, sem: asyncio.Semaphore) -> None:
     parts = [f"Wikipedia article: {a['title']}\n\n{a['text']}", f"\nThe newcomer is generation {msg['generation']}."]
     if msg.get("predecessor"):
         pr = msg["predecessor"]
-        parts.append(
-            f"It swims in as {pr['name']} swims out. {pr['name']}: {pr['personality']} "
-            f"Its philosophy: {pr.get('philosophy') or 'unknown'}."
-        )
-        if pr.get("teachings"):
-            parts.append("The newcomer arrives carrying these teachings of theirs: " + " / ".join(pr["teachings"]))
+        # Only a name and one teaching: the newcomer is shaped by its own article, not its predecessor.
+        parts.append(f"It swims in as {pr['name']} swims out" + (f", carrying this teaching of theirs: {pr['teaching']}" if pr.get("teaching") else "."))
     else:
         parts.append("It is one of the first fish to swim into the tank.")
     if msg.get("temperament"):
@@ -467,7 +464,9 @@ async def birth(ws, msg: dict, sem: asyncio.Semaphore) -> None:
     async with sem:
         t0 = time.monotonic()
         try:
-            result = await HATCHER.run("\n".join(parts))
+            # Streamed, so tokens flow back right away: a public tunnel (Cloudflare) drops requests
+            # that send nothing for 100 seconds, and a persona can take longer than that under load.
+            result = await run_streaming(HATCHER, ws, {"id": msg["id"], "seq": None}, "\n".join(parts))
         except Exception as e:
             log.warning("arrival #%s: no persona after %.1fs (%s: %s)", msg["id"], time.monotonic() - t0, type(e).__name__, e)
             reply["persona"] = None

@@ -22,10 +22,9 @@ export function createBirths(world, { spriteDir, log = console.log }) {
       world.mind.send({
         t: 'birth', id: arr.id, generation: arr.gen, temperament: TEMPERAMENTS[Math.floor(Math.random() * TEMPERAMENTS.length)],
         article: { title: article.title, text: article.text },
-        predecessor: arr.predecessorPersona && {
-          name: arr.predecessorName, personality: arr.predecessorPersona.personality,
-          philosophy: arr.predecessorPersona.philosophy,
-          teachings: arr.lore.map((l) => world.lore.get(l.id)?.text).filter(Boolean),
+        predecessor: arr.predecessorName && {
+          name: arr.predecessorName,
+          teaching: arr.lore.map((l) => world.lore.get(l.id)?.text).find(Boolean) ?? null,
         },
       });
     });
