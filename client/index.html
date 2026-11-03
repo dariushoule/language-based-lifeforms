@@ -4,24 +4,170 @@
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <title>Language Based Lifeforms</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link href="https://fonts.googleapis.com/css2?family=Fraunces:ital,opsz,wght@0,9..144,400;0,9..144,600;1,9..144,400&family=Inter:wght@400;500&family=IM+Fell+English:ital@0;1&family=IM+Fell+English+SC&display=swap" rel="stylesheet" />
   <style>
-    html, body { margin: 0; height: 100%; background: #181425; color: #ead4aa; font: 13px/1.4 ui-monospace, monospace; }
-    #game { display: flex; justify-content: center; align-items: center; height: 100%; }
-    #game canvas { image-rendering: pixelated; }
-    #card { position: fixed; pointer-events: none; display: none; max-width: 320px; padding: 10px 12px;
-            background: #262b44ee; border: 2px solid #5a6988; }
-    #card h3 { margin: 0 0 4px; color: #fee761; font-size: 14px; }
-    #card .bar { height: 4px; background: #3a4466; margin: 2px 0 6px; }
-    #card .bar i { display: block; height: 100%; background: #63c74d; }
-    #card .muted { color: #8b9bb4; }
-    #card p { margin: 6px 0; }
-    #card ul { margin: 2px 0 0; padding-left: 16px; }
-    #card .reasoning { color: #c0cbdc; font-size: 11px; margin-top: 2px; }
+    :root {
+      --bg: #02070c; --line: #16303f; --text: #d4e6ee; --muted: #6f8d9c; --soft: #9fb9c6;
+      --accent: #7fe0ff; --warm: #ffcf8a; --paper: #f2e2c4; --danger: #ff7a8a;
+    }
+    * { box-sizing: border-box; }
+    html, body { margin: 0; height: 100%; background: var(--bg); color: var(--text); font: 13px/1.5 Inter, system-ui, sans-serif; overflow: hidden; }
+    #app { display: flex; height: 100%; }
+    #tank { position: relative; flex: 1; min-width: 0; display: flex; align-items: center; justify-content: center; overflow: hidden; }
+    #tank canvas { display: block; }
+    #bubbles { position: absolute; inset: 0; pointer-events: none; overflow: hidden; }
+    .bubble { position: absolute; width: max-content; max-width: 250px; padding: 7px 10px 8px; border-radius: 12px; background: #04131dd9;
+      border: 1px solid var(--c, var(--accent)); color: #e6f4f8; font: 12px/1.42 Fraunces, Georgia, serif;
+      box-shadow: 0 0 18px -6px var(--c, var(--accent)); transform: translate(-50%, -100%); transition: opacity 0.8s; }
+    .bubble b { display: block; font: 500 10px/1.2 Inter, sans-serif; letter-spacing: 0.04em; color: var(--c); margin-bottom: 2px; text-transform: uppercase; }
+    .bubble.detached::after { display: none; }
+    .bubble::after { content: ''; position: absolute; left: 50%; bottom: -6px; width: 10px; height: 10px; background: inherit;
+      border-right: 1px solid var(--c); border-bottom: 1px solid var(--c); transform: translateX(-50%) rotate(45deg); }
+
+    #side { width: 400px; display: flex; flex-direction: column; background: linear-gradient(#061019, #03080d); border-left: 1px solid var(--line); }
+    #side header { padding: 16px 18px 10px; }
+    #side h1 { margin: 0; font: 600 19px/1.2 Fraunces, Georgia, serif; letter-spacing: 0.01em; }
+    #side h1 span { color: var(--accent); }
+    #side .sub { color: var(--muted); font-size: 12px; margin-top: 3px; }
+    #side header { border-bottom: 1px solid var(--line); }
+    .pane { flex: 1; overflow-y: auto; padding: 10px 16px 28px; display: none; scrollbar-width: thin; scrollbar-color: #1d3a4a transparent; }
+    .pane.on { display: block; }
+    .empty { color: var(--muted); font-style: italic; padding: 16px 0; }
+    .muted { color: var(--muted); }
+    button.link { background: none; border: 0; padding: 0; color: var(--soft); font: inherit; cursor: pointer; text-decoration: underline dotted; }
+
+    /* The cover in the sidebar that opens the book */
+    #cover { display: flex; gap: 12px; align-items: center; width: 100%; margin: 12px 0 2px; padding: 10px 12px; cursor: pointer; text-align: left;
+      background: linear-gradient(135deg, #3a2414, #24150b); border: 1px solid #6d4a26; border-radius: 6px 10px 10px 6px;
+      box-shadow: inset 6px 0 0 #1a0f07, 0 6px 18px #0008; color: #ecd9b4; font: inherit; }
+    #cover:hover { border-color: #b78a4e; }
+    #cover .emblem { font: 26px 'IM Fell English', serif; color: #d9b36d; text-shadow: 0 0 12px #d9b36d66; }
+    #cover .t { font: 17px 'IM Fell English SC', serif; letter-spacing: 0.04em; color: #f0dcaf; }
+    #cover .s { margin-top: 2px; font: 500 12.5px/1.3 Inter, system-ui, sans-serif; color: #e3cc9f; letter-spacing: 0.01em; }
+
+    /* Fish */
+    .sec { margin: 16px 0 4px; color: var(--muted); font-size: 11px; text-transform: uppercase; letter-spacing: 0.08em; }
+    .kin { display: flex; gap: 10px; align-items: flex-start; padding: 8px 6px; border-bottom: 1px solid #0d1f2a; cursor: pointer; border-radius: 6px; }
+    .kin:hover { background: #0b1b25; }
+    .kin img { width: 58px; height: 36px; object-fit: contain; flex: none; }
+    .kin.gone img { opacity: 0.5; filter: grayscale(0.6); }
+    .kin .name { font-weight: 500; }
+    .kin .meta { color: var(--muted); font-size: 11.5px; }
+    .kin .phil { font: italic 12.5px/1.4 Fraunces, Georgia, serif; color: var(--soft); }
+    .kin .swatch { width: 58px; height: 36px; flex: none; display: flex; align-items: center; justify-content: center; }
+    .kin .swatch i { width: 14px; height: 14px; border-radius: 50%; margin: 0 -2px; box-shadow: 0 0 10px currentColor; }
+    #profile .swatches { display: flex; gap: 8px; margin: 6px 0 10px; }
+    #profile .swatches i { width: 22px; height: 22px; border-radius: 50%; box-shadow: 0 0 14px currentColor; }
+    #profile .palette { display: flex; flex-wrap: wrap; gap: 6px; margin: 4px 0; }
+    #profile .palette span { display: inline-flex; align-items: center; gap: 5px; font-size: 11.5px; color: var(--soft); }
+    #profile .palette span i { width: 10px; height: 10px; border-radius: 2px; }
+
+    /* A fish's profile, in the sidebar */
+    #profile .back { margin: 2px 0 10px; }
+    #profile .portrait { display: block; width: 100%; max-height: 150px; object-fit: contain; margin: 4px 0 6px; filter: drop-shadow(0 0 16px var(--c)); }
+    #profile h2 { margin: 0; font: 600 21px Fraunces, Georgia, serif; color: var(--c, var(--accent)); }
+    #profile p { margin: 7px 0; }
+    #profile .quote { font: italic 14px/1.45 Fraunces, Georgia, serif; color: #e8f3f6; }
+    #profile .phil { font: 14px/1.45 Fraunces, Georgia, serif; color: var(--paper); }
+    #profile .reasoning { color: #93aab6; font-size: 11.5px; }
+    #profile .bars { display: grid; grid-template-columns: 64px 1fr; gap: 3px 8px; align-items: center; margin: 8px 0 4px; font-size: 11.5px; color: var(--soft); }
+    #profile .bar { height: 4px; background: #11303f; border-radius: 2px; }
+    #profile .bar i { display: block; height: 100%; background: var(--c, var(--accent)); border-radius: 2px; }
+    #profile ul { margin: 2px 0 0; padding-left: 16px; }
+    #profile li { margin: 2px 0; }
+    #profile .carried li { font-family: Fraunces, Georgia, serif; color: var(--paper); }
+    #profile .carried li span { font-family: Inter, sans-serif; font-size: 11px; color: var(--muted); }
+
+    /* The book */
+    #book { position: fixed; inset: 0; z-index: 20; display: none; align-items: center; justify-content: center; gap: 14px;
+      background: radial-gradient(ellipse at center, #031019dd, #000000f2); backdrop-filter: blur(5px); }
+    #book.open { display: flex; }
+    #book .tome { position: relative; display: flex; width: min(1180px, 86vw); height: min(780px, 88vh); padding: 14px;
+      background: linear-gradient(135deg, #4a2c16, #2a170a); border-radius: 10px; box-shadow: 0 40px 90px #000, inset 0 0 0 1px #7a5530; }
+    #book .tome.turn-next .page { animation: turn-next 0.35s ease-out; }
+    #book .tome.turn-prev .page { animation: turn-prev 0.35s ease-out; }
+    @keyframes turn-next { from { opacity: 0.2; transform: translateX(14px); } }
+    @keyframes turn-prev { from { opacity: 0.2; transform: translateX(-14px); } }
+    #book .page { position: relative; flex: 1; min-width: 0; padding: 50px 54px 56px; overflow: hidden; color: #2e2216;
+      background: radial-gradient(ellipse at 30% 20%, #f4e9d0, #e8d6b2 70%, #dcc59a); }
+    #book .page.left { border-radius: 4px 0 0 4px; box-shadow: inset -34px 0 40px -30px #5a3c1c99; }
+    #book .page.right { border-radius: 0 4px 4px 0; box-shadow: inset 34px 0 40px -30px #5a3c1c99; }
+    #book .running { position: absolute; top: 20px; left: 0; right: 0; text-align: center; font: 11.5px 'IM Fell English SC', serif; letter-spacing: 0.22em; color: #8a7051; }
+    #book .folio { position: absolute; bottom: 20px; left: 0; right: 0; text-align: center; font: 13px 'IM Fell English', serif; color: #8a7051; }
+    #book .body { height: 100%; overflow: hidden; }
+    #book .measure { position: fixed; left: -9999px; top: 0; width: calc((min(1180px, 86vw) - 28px) / 2); height: min(780px, 88vh); padding: 50px 54px 56px; visibility: hidden; }
+    #book .close { position: absolute; top: -14px; right: -14px; width: 34px; height: 34px; border-radius: 50%; border: 1px solid #7a5530;
+      background: #2a170a; color: #e9d3a6; font: 20px/1 serif; cursor: pointer; z-index: 2; }
+    #book .turn { width: 44px; height: 88px; border: 0; background: none; color: #d9b36d; font: 56px/1 'IM Fell English', serif; cursor: pointer; opacity: 0.8; }
+    #book .turn:hover:not(:disabled) { opacity: 1; text-shadow: 0 0 14px #d9b36d; }
+    #book .turn:disabled { opacity: 0.15; cursor: default; }
+
+    #book .entry { margin: 0 0 20px; }
+    #book .entry p { margin: 0 0 4px; font: 17px/1.5 'IM Fell English', Georgia, serif; color: #2b1d10; }
+    #book .entry.first p::first-letter { float: left; font: 54px/0.9 'IM Fell English', serif; margin: 4px 8px 0 0; color: #7a3d18; }
+    #book .entry .sig { text-align: right; font: italic 14px 'IM Fell English', serif; color: #6a5036; }
+    #book .entry .sig::after { content: ''; display: inline-block; width: 7px; height: 7px; margin-left: 6px; border-radius: 50%; background: var(--ink); box-shadow: 0 0 6px var(--ink); vertical-align: 1px; }
+    #book .entry .margin { margin: 4px 0 2px; padding-left: 10px; border-left: 1px solid #b89a6c; font: italic 13px/1.4 'IM Fell English', serif; color: #7b5d3c; }
+    #book .entry .note { font: 12px/1.4 'IM Fell English', serif; color: #8c7656; }
+    #book .entry.faded p, #book .entry.faded .sig { color: #8a7660; }
+    #book .entry.lit { animation: lit 2.4s ease-out; }
+    @keyframes lit { from { background: #f6d58a; box-shadow: 0 0 0 8px #f6d58a; } }
+    #book .chapter-head { text-align: center; margin: 26px 0 26px; }
+    #book .chapter-head h2 { margin: 4px 0 2px; font: 34px 'IM Fell English SC', serif; color: #3b2412; letter-spacing: 0.02em; font-weight: normal; }
+    #book .chapter-head .count, #book .small { font: italic 14px 'IM Fell English', serif; color: #7b6244; }
+    #book .orn { font: 26px 'IM Fell English', serif; color: #9a6a35; }
+    #book .titlepage { height: 100%; display: flex; flex-direction: column; align-items: center; justify-content: center; text-align: center; gap: 14px; }
+    #book .titlepage h1 { margin: 0; font: 56px/1.05 'IM Fell English SC', serif; color: #3b2412; font-weight: normal; }
+    #book .titlepage h1 span { font-size: 30px; }
+    #book .titlepage .small { max-width: 320px; }
+    #book .endpaper { height: 100%; display: flex; flex-direction: column; justify-content: center; padding: 0 20px; }
+    #book .endpaper p { font: italic 21px/1.5 'IM Fell English', serif; color: #4a3420; text-align: center; }
+    #book .endpaper .sig { text-align: center; font: 14px 'IM Fell English', serif; color: #7b6244; }
+    #book .contents-head, #book .keeping h3 { margin: 10px 0 22px; text-align: center; font: 26px 'IM Fell English SC', serif; color: #3b2412; font-weight: normal; }
+    #book .contents { list-style: none; margin: 0; padding: 0; font: 18px 'IM Fell English', serif; }
+    #book .contents li { display: flex; align-items: baseline; gap: 8px; padding: 6px 0; cursor: pointer; }
+    #book .contents li:hover span { color: #7a3d18; }
+    #book .contents i { flex: 1; border-bottom: 1px dotted #a88a60; }
+    #book .keeping p { font: 16.5px/1.6 'IM Fell English', serif; text-indent: 1.4em; margin: 0 0 10px; }
+    #book .keeping .tally { text-align: center; text-indent: 0; font-style: italic; color: #7b6244; margin-top: 24px; }
+
+    /* Hover tooltip: small, and always fully on screen */
+    #tip { position: fixed; pointer-events: none; display: none; max-width: 260px; padding: 7px 10px; z-index: 10;
+      background: #04111bf2; border: 1px solid #1f4152; border-radius: 9px; box-shadow: 0 8px 30px #000a; font-size: 12px; }
+    #tip b { color: var(--c, var(--accent)); font: 600 13.5px Fraunces, Georgia, serif; }
+    #tip .muted { font-size: 11.5px; }
+    #tip .hint { color: #4f7080; font-size: 10.5px; margin-top: 2px; }
+
+    @media (max-width: 900px) {
+      #app { flex-direction: column; }
+      #tank { flex: none; height: 56vw; }
+      #side { width: auto; flex: 1; min-height: 0; border-left: 0; border-top: 1px solid var(--line); }
+      .bubble { max-width: 180px; font-size: 10.5px; padding: 5px 7px; }
+      #book .tome { width: 92vw; height: 84vh; padding: 8px; }
+      #book .page { padding: 40px 24px 46px; }
+      #book .measure { width: calc(92vw - 16px); height: 84vh; padding: 40px 24px 46px; }
+      #book .turn { position: fixed; bottom: 2vh; height: 50px; font-size: 40px; }
+      #book .turn.prev { left: 20vw; }
+      #book .turn.next { right: 20vw; }
+    }
   </style>
 </head>
 <body>
-  <div id="game"></div>
-  <div id="card"></div>
+  <div id="app">
+    <div id="tank"><div id="bubbles"></div></div>
+    <aside id="side">
+      <header>
+        <h1>Language Based <span>Lifeforms</span></h1>
+        <div class="sub" id="status">connecting…</div>
+        <button id="cover"><span class="emblem">❦</span><span><div class="t">The Compendium</div><div class="s" id="cover-sub">nothing set down yet</div></span></button>
+      </header>
+      <section class="pane on" id="codex"></section>
+      <section class="pane" id="profile"></section>
+    </aside>
+  </div>
+  <div id="tip"></div>
+  <div id="book"></div>
   <script type="module" src="./main.js"></script>
 </body>
 </html>
