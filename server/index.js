@@ -3,7 +3,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import crypto from 'node:crypto';
 import { WebSocketServer } from 'ws';
-import { createWorld, step, snapshot, applyPlan, mindLost } from './sim.js';
+import { createWorld, step, snapshot, applyPlan, mindLost, hearThinking } from './sim.js';
 
 try { process.loadEnvFile('.env'); } catch {}
 
@@ -52,6 +52,7 @@ minds.on('connection', (ws, req) => {
   ws.on('message', (data) => {
     let msg;
     try { msg = JSON.parse(data); } catch { return; }
+    if (msg.t === 'thinking') return hearThinking(world, msg);
     if (msg.t !== 'plan') return;
     const ok = applyPlan(world, msg);
     const acts = (msg.actions ?? []).map((a) => `${a.type}(${Object.entries(a).filter(([k]) => k !== 'type').map(([, v]) => v).join(',')})`);

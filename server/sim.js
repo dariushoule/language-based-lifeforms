@@ -20,6 +20,7 @@ const THINK_GAP = 2;       // s between finishing a plan and asking for the next
 const FAIL_GAP = 5;        // s to pause after an action fails
 const MIND_TIMEOUT = 300;  // s before a silent mind is ignored and instinct takes over (thinking is slow)
 const MEMORY = 40;         // remembered events per LBL
+const REASONING_KEEP = 4000; // chars of streamed reasoning kept per LBL
 const PLAN_MAX = 8;        // actions per plan
 
 export const ACTIONS = ['walk_to', 'chop_tree', 'place_block', 'take_block', 'rest'];
@@ -47,6 +48,7 @@ export function createLBL(world, x) {
       'The first of its kind. Woke up on bare ground with no memory and a vague sense ' +
       'that it ought to be wearing something.',
     thought: 'Where am I?',
+    reasoning: '',           // the mind's private reasoning for the latest decision, streamed in
     carrying: { wood: 0 },
     plan: [],                // queued actions
     action: null,            // the action being executed, with its progress
@@ -358,6 +360,13 @@ export function applyPlan(world, msg) {
   return true;
 }
 
+// Reasoning streamed in while the mind works on a decision; observers see it live.
+export function hearThinking(world, msg) {
+  const e = world.entities.find((x) => x.id === msg.id && x.kind === 'lbl');
+  if (!e || msg.seq !== e.seq || e.awaiting == null || typeof msg.text !== 'string') return;
+  e.reasoning = (e.reasoning + msg.text).slice(-REASONING_KEEP);
+}
+
 // Forget pending requests (the mind disconnected); those LBLs fall back to instinct.
 export function mindLost(world) {
   for (const e of lbls(world)) if (e.awaiting != null) { e.awaiting = null; e.nextThinkAt = world.time; }
@@ -402,6 +411,7 @@ function think(world, e) {
     e.seq++;
     e.awaiting = world.time;
     e.brain = 'thinking';
+    e.reasoning = '';
     world.mind.send({ t: 'decide', id: e.id, seq: e.seq, perception: perceive(world, e) });
   } else instinct(world, e);
 }
@@ -464,7 +474,7 @@ function view(e) {
       return {
         id: e.id, kind: e.kind, name: e.name, x: e.x, y: e.y, w: e.w, h: e.h, sprite: e.sprite,
         bornAt: e.bornAt, needs: e.needs, emotion: e.emotion, background: e.background, thought: e.thought,
-        carrying: e.carrying, brain: e.brain, moving: e.vx !== 0,
+        carrying: e.carrying, brain: e.brain, moving: e.vx !== 0, reasoning: e.reasoning.slice(-500),
         doing: describeAction(e.action), plan: e.plan.map(describeAction),
         memory: e.memory.slice(-5).map((m) => ({ at: m.at, text: recall(m) })),
       };

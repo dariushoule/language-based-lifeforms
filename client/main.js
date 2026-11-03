@@ -145,12 +145,22 @@ class WorldScene extends Phaser.Scene {
       .map(([k, v]) => `<div>${k}</div><div class="bar"><i style="width:${Math.round(v * 100)}%"></i></div>`)
       .join('');
     const mind = { mind: 'mind', thinking: 'thinking…', instinct: 'acting on instinct', waking: 'waking up' }[e.brain] ?? e.brain;
-    const doing = e.doing ? `${e.doing}${e.plan.length ? `, then ${e.plan.join(', then ')}` : ''}` : 'idle';
+    const doing = e.doing ? `${e.doing}${e.plan.length ? `, then ${e.plan.join(', then ')}` : ''}` : e.brain === 'thinking' ? 'stopped to think' : 'idle';
     const memory = e.memory.slice().reverse().map((m) => `<li>${esc(m.text)} <span class="muted">${this.ago(m.at)}</span></li>`).join('');
     return `<h3>${esc(e.name)}</h3><div class="muted">LBL #${e.id} · age ${age}s · feels ${e.emotion} · ${mind}</div>` +
-      `<p>${esc(e.background)}</p><p><i>“${esc(e.thought)}”</i></p>` +
+      `<p>${esc(e.background)}</p><p><i>“${esc(e.thought)}”</i></p>` + this.reasoning(e) +
       `<p><b>Doing:</b> ${esc(doing)}<br><b>Carrying:</b> ${e.carrying.wood} wood</p>${bars}` +
       (memory ? `<div class="muted">Remembers</div><ul>${memory}</ul>` : '');
+  }
+
+  // The mind's private reasoning: live while it decides, then the end of how it got there.
+  reasoning(e) {
+    if (!e.reasoning) return '';
+    const live = e.brain === 'thinking';
+    let text = e.reasoning.trim().replace(/\s+/g, ' ');
+    const keep = live ? 420 : 260;
+    if (text.length > keep) text = '…' + text.slice(-keep).replace(/^\S*\s/, '');
+    return `<div class="muted">${live ? 'Thinking it through…' : 'How it decided'}</div><p class="reasoning">${esc(text)}</p>`;
   }
 
   card_tree(e) {

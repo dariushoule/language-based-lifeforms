@@ -15,6 +15,7 @@ Config (repo-root .env or environment):
 """
 
 import asyncio
+import contextlib
 import json
 import logging
 import os
@@ -27,7 +28,8 @@ os.environ.setdefault("PYDANTIC_AI_NO_BANNER", "1")
 
 from openai import AsyncOpenAI
 from pydantic import BaseModel, Field
-from pydantic_ai import Agent, ModelSettings, ToolOutput
+from pydantic_ai import Agent, AgentRunResult, AgentRunResultEvent, ModelSettings, ToolOutput
+from pydantic_ai.messages import PartDeltaEvent, PartStartEvent, ThinkingPart, ThinkingPartDelta
 from pydantic_ai.models.openai import OpenAIChatModel
 from pydantic_ai.profiles.openai import OpenAIModelProfile
 from pydantic_ai.providers.openai import OpenAIProvider
@@ -55,6 +57,7 @@ THINKING = os.environ.get("BRAIN_THINKING", "1") != "0"
 # reasoning at this many tokens and makes it answer; at ~30 tok/s, 1500 is about a minute.
 THINK_BUDGET = int(os.environ.get("BRAIN_THINK_BUDGET", "1500"))
 THINK_TIMEOUT = 240   # s; the sim gives up on a decision after 300
+STREAM_EVERY = 0.5    # s between batches of reasoning streamed to the sim for observers
 
 # ---------- the plan the model must produce ----------
 
@@ -191,6 +194,36 @@ def describe(plan: Plan) -> str:
     return " ".join(f"{a.type}({args(a)})" for a in plan.actions)
 
 
+async def think(ws, msg: dict, prompt: str) -> AgentRunResult[Plan]:
+    """Runs the agent, streaming its reasoning to the sim (in batches) so observers can watch it think."""
+    pending: list[str] = []
+    sent_at = 0.0
+    thought_before = False
+
+    async def flush() -> None:
+        nonlocal sent_at
+        sent_at = time.monotonic()
+        if pending:
+            text = "".join(pending)
+            pending.clear()
+            with contextlib.suppress(ConnectionClosed):
+                await ws.send(json.dumps({"t": "thinking", "id": msg["id"], "seq": msg["seq"], "text": text}))
+
+    async with AGENT.run_stream_events(prompt) as events:
+        async for ev in events:
+            if isinstance(ev, PartStartEvent) and isinstance(ev.part, ThinkingPart):
+                pending.append(("\n\n" if thought_before else "") + ev.part.content)  # a retry thinks again
+                thought_before = True
+            elif isinstance(ev, PartDeltaEvent) and isinstance(ev.delta, ThinkingPartDelta) and ev.delta.content_delta:
+                pending.append(ev.delta.content_delta)
+            elif isinstance(ev, AgentRunResultEvent):
+                await flush()
+                return ev.result
+            if time.monotonic() - sent_at > STREAM_EVERY:
+                await flush()
+    raise RuntimeError("the run ended without a result")
+
+
 async def decide(ws, msg: dict, sem: asyncio.Semaphore) -> None:
     p = msg["perception"]
     name = p["you"]["name"]
@@ -198,8 +231,8 @@ async def decide(ws, msg: dict, sem: asyncio.Semaphore) -> None:
     async with sem:
         t0 = time.monotonic()
         try:
-            result = await AGENT.run(
-                "What you perceive right now:\n```json\n" + json.dumps(p, indent=1) + "\n```\nWhat do you do next?"
+            result = await think(
+                ws, msg, "What you perceive right now:\n```json\n" + json.dumps(p, indent=1) + "\n```\nWhat do you do next?"
             )
         except Exception as e:  # an empty plan makes the sim fall back to instinct immediately
             log.warning("%s: no plan after %.1fs (%s: %s)", name, time.monotonic() - t0, type(e).__name__, e)
