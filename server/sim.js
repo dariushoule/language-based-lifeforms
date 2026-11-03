@@ -1124,11 +1124,12 @@ function stepFish(world, f, dt) {
   const speed = Math.hypot(f.vx, f.vy) / 70;
   n.hunger = Math.max(0, n.hunger - dt * (1 / 500) * (0.8 + 0.6 * speed));
   n.energy = Math.max(0, n.energy - dt * (1 / 900) * (0.6 + speed));
-  // Loneliness creeps in over about 12 minutes alone; company eases it a little, and a conversation
-  // face to face a lot. Meaning fades over about 15 minutes unless the fish does something with it.
+  // Loneliness creeps in over about 12 minutes alone; company only slows it, and it takes a good
+  // while of face-to-face talk to fill up. Meaning fades over about 15 minutes unless the fish does
+  // something with it.
   n.social = Math.max(0, n.social - dt / 700);
-  if (f.talking) n.social = Math.min(1, n.social + dt / 150);
-  else if (fishes(world).some((o) => o !== f && !o.leaving && dist(o, f) < COMPANY)) n.social = Math.min(1, n.social + dt / 500);
+  if (f.talking) n.social = Math.min(1, n.social + dt / 300);
+  else if (fishes(world).some((o) => o !== f && !o.leaving && dist(o, f) < COMPANY)) n.social = Math.min(1, n.social + dt / 900);
   n.meaning = Math.max(0, n.meaning - dt / 900);
   if (n.hunger <= 0) f.health -= dt / 120;
   else if (n.hunger > 0.35) f.health = Math.min(1, f.health + dt / 200);
