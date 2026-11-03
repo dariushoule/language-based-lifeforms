@@ -22,6 +22,7 @@ const PREPARE = 150;          // s before leaving that its successor starts bein
 const ARRIVAL_TIMEOUT = 150;  // s an empty place waits for a prepared newcomer before taking a plain one
 const HEAR = 260;             // px a voice carries
 const NEAR = 70;              // px to stop at when approaching another fish
+const COMPANY = 160;          // px within which another fish is company
 const TALK_SECS = 14;         // s two fish stay face to face after one speaks to the other
 const MAX_PLANTS = 18;
 const MIN_PLANTS = 10;
@@ -176,7 +177,7 @@ function enter(world, arr) {
     id: arr.id, kind: 'fish', name: uniqueName(world, p.name), gen: arr.gen,
     predecessorId: arr.predecessorId, predecessorName: arr.predecessorName, lineage: arr.lineage,
     x, y, vx: -side * 40, vy: 0, facing: -side, entering: true, leaving: false,
-    size: 0.75, health: 1, needs: { hunger: 0.75, energy: 0.9, social: 0.4, meaning: 0.2 },
+    size: 0.75, health: 1, needs: { hunger: 0.75, energy: 0.9, social: 0.45, meaning: 0.35 },
     emotion: 'curious', feeling: null, persona: p, article: arr.article, sprite: arr.sprite, glow: arr.glow ?? '#7fdcff',
     bornAt: world.time, lifespan: rand(...LIFESPAN), wallBorn: Date.now(),
     thought: 'Where the water ends, there was more water. And now: light.', reasoning: '',
@@ -358,7 +359,7 @@ function teach(world, f, loreId, listeners) {
   const learned = [];
   for (const o of listeners) if (learn(world, o, loreId, f.name)) learned.push(o.name);
   if (!learned.length) return;
-  f.needs.meaning = Math.min(1, f.needs.meaning + 0.04);
+  f.needs.meaning = Math.min(1, f.needs.meaning + 0.06);
   remember(world, f, `taught ${learned.join(' and ')}: "${lore.text}"`);
   world.emit({ kind: 'teach', id: f.id, name: f.name, glow: f.glow, to: learned, text: lore.text, loreId });
 }
@@ -368,7 +369,7 @@ function teach(world, f, loreId, listeners) {
 function learn(world, f, loreId, from) {
   if (f.lore.some((l) => l.id === loreId)) return false;
   f.lore.push({ id: loreId, from, at: world.time, stance: 'holds' });
-  f.needs.meaning = Math.min(1, f.needs.meaning + 0.02);
+  f.needs.meaning = Math.min(1, f.needs.meaning + 0.04);
   remember(world, f, `learned from ${from}: "${world.lore.get(loreId).text}"`);
   if (f.lore.length > CARRY) {
     const rank = (l) => (l.stance === 'disputes' ? -1e6 : l.stance === 'embraces' ? 1e6 : 0) + standing(world.lore.get(l.id) ?? { told: 0 });
@@ -395,7 +396,7 @@ function compose(world, f, raw) {
   f.lore.push({ id: lore.id, from: 'yourself', at: world.time, stance: 'embraces' });
   if (f.lore.length > CARRY) f.lore.shift();
   f.composed = (f.composed ?? 0) + 1;
-  f.needs.meaning = Math.min(1, f.needs.meaning + 0.04);
+  f.needs.meaning = Math.min(1, f.needs.meaning + 0.1);
   remember(world, f, parent ? `reworked "${parent.text}" into: "${text}"` : `put into words: "${text}"`);
   world.emit({ kind: 'lore', id: f.id, name: f.name, glow: f.glow, text, theme: lore.theme, loreId: lore.id, refinesText: lore.refinesText, refinesBy: lore.refinesBy });
   pruneLore(world);
@@ -415,6 +416,7 @@ function takeStance(world, f, { teaching_id, agree }) {
   if (lore.agreed.length > 30) lore.agreed.shift();
   if (lore.disputed.length > 30) lore.disputed.shift();
   world.store.putLore(lore);
+  f.needs.meaning = Math.min(1, f.needs.meaning + 0.03); // making up your mind is worth something
   remember(world, f, `${agree ? 'embraced' : 'disputed'}: "${lore.text}"`);
   world.emit({ kind: 'stance', id: f.id, name: f.name, glow: f.glow, agree, text: lore.text, loreId: lore.id });
 }
@@ -1122,8 +1124,12 @@ function stepFish(world, f, dt) {
   const speed = Math.hypot(f.vx, f.vy) / 70;
   n.hunger = Math.max(0, n.hunger - dt * (1 / 500) * (0.8 + 0.6 * speed));
   n.energy = Math.max(0, n.energy - dt * (1 / 900) * (0.6 + speed));
-  n.social = Math.max(0, n.social - dt / 400);
-  n.meaning = Math.max(0, n.meaning - dt / 500);
+  // Loneliness creeps in over about 12 minutes alone; company eases it a little, and a conversation
+  // face to face a lot. Meaning fades over about 15 minutes unless the fish does something with it.
+  n.social = Math.max(0, n.social - dt / 700);
+  if (f.talking) n.social = Math.min(1, n.social + dt / 150);
+  else if (fishes(world).some((o) => o !== f && !o.leaving && dist(o, f) < COMPANY)) n.social = Math.min(1, n.social + dt / 500);
+  n.meaning = Math.max(0, n.meaning - dt / 900);
   if (n.hunger <= 0) f.health -= dt / 120;
   else if (n.hunger > 0.35) f.health = Math.min(1, f.health + dt / 200);
   if (n.hunger > 0.3 && f.size < 1.35) f.size += (dt * 0.55) / f.lifespan;
