@@ -5,6 +5,7 @@ import crypto from 'node:crypto';
 import { WebSocketServer } from 'ws';
 import { createWorld, restore, serialize, step, snapshot, applyPlan, mindLost, hearThinking, compendium } from './sim.js';
 import { openStore } from './store.js';
+import { createSnapshots, createCompendium } from './delta.js';
 import { createBirths } from './births.js';
 
 try { process.loadEnvFile('.env'); } catch {}
@@ -12,9 +13,9 @@ try { process.loadEnvFile('.env'); } catch {}
 const PORT = Number(process.env.PORT ?? 8080);
 const TICK_HZ = 20;
 const SEND_HZ = 10;
-const FULL_EVERY = 10;    // every 10th snapshot (once a second) carries the heavy fields
 const SAVE_SECS = 15;
-const LINEAGE = 300;      // most recent fish observers are told about
+const SWUM_OUT = 12;              // fish that last swam out, listed in the Codex (client/main.js SWUM_OUT)
+const SLOW_VIEWER = 8 * 1024 * 1024; // bytes queued for an observer before it's dropped (it reconnects and resyncs)
 const STATIC_DIR = path.resolve(process.env.STATIC_DIR ?? 'dist');
 const DATA_DIR = path.resolve(process.env.DATA_DIR ?? 'data');
 const SPRITE_DIR = path.join(DATA_DIR, 'fish');
@@ -44,24 +45,44 @@ const server = http.createServer((req, res) => {
   serveFile(res, STATIC_DIR, pathname === '/' ? 'index.html' : pathname);
 });
 
-// Observers: read-only. They get the world and the culture, then live updates.
+// Observers: read-only. They get what the others already hold, then deltas (server/delta.js): the
+// tank 10 times a second, the compendium and the fish that swam out whenever they change.
 const viewers = new WebSocketServer({ noServer: true });
-const broadcast = (msg) => {
-  const s = JSON.stringify(msg);
-  for (const ws of viewers.clients) if (ws.readyState === ws.OPEN) ws.send(s);
+const snapshots = createSnapshots();
+const book = createCompendium();
+let departed = null; // the last 'departed' message
+const broadcast = (s) => {
+  for (const ws of viewers.clients) {
+    if (ws.readyState !== ws.OPEN) continue;
+    // Deltas can't be skipped, so an observer that can't keep up is dropped; it reconnects and resyncs.
+    if (ws.bufferedAmount > SLOW_VIEWER) ws.terminate();
+    else ws.send(s);
+  }
 };
-const culture = () => ({ t: 'culture', compendium: compendium(world), lineage: store.lineage(LINEAGE) });
+// Only what the Codex and a departed fish's entry show (the persona's voice is for the mind).
+const departedView = (f) => ({
+  id: f.id, name: f.name, gen: f.gen, predecessorName: f.predecessorName, diedAt: f.diedAt, cause: f.cause, sprite: f.sprite, glow: f.glow, article: f.article && { title: f.article.title, url: f.article.url },
+  persona: f.persona && { personality: f.persona.personality, desire: f.persona.desire, philosophy: f.persona.philosophy, temperament: f.persona.temperament, memories: f.persona.memories },
+});
+function culture() {
+  const c = book.next(compendium(world));
+  if (c) broadcast(c);
+  const { recent, total } = store.departed(SWUM_OUT);
+  const d = JSON.stringify({ t: 'departed', total, recent: recent.map(departedView) });
+  if (d !== departed) broadcast((departed = d));
+}
+culture();
 viewers.on('connection', (ws) => {
-  ws.send(JSON.stringify(snapshot(world, true)));
-  ws.send(JSON.stringify(culture()));
+  ws.send(snapshots.full());
+  const c = book.full();
+  if (c) ws.send(c);
+  ws.send(departed);
 });
 
 // Everything notable that happens goes into the chronicle in the store (and to the log).
-let cultureDirty = true;
 world.emit = (ev) => {
   const entry = { ...ev, at: world.time, wall: Date.now() };
   store.event(entry);
-  if (ev.kind !== 'say' && ev.kind !== 'bite') cultureDirty = true;
   if (ev.kind === 'arrive' || ev.kind === 'depart' || ev.kind === 'death') console.log(`[tank] ${ev.text}`);
   else if (ev.kind === 'lore') console.log(`[tank] ${ev.name} ${ev.refinesBy ? `reworked ${ev.refinesBy}'s teaching` : 'found a teaching'} (${ev.theme}): ${ev.text}`);
 };
@@ -111,14 +132,9 @@ server.on('upgrade', (req, socket, head) => {
   socket.end('HTTP/1.1 401 Unauthorized\r\n\r\n');
 });
 
-let sent = 0;
 setInterval(() => step(world, 1 / TICK_HZ), 1000 / TICK_HZ);
-setInterval(() => broadcast(snapshot(world, sent++ % FULL_EVERY === 0)), 1000 / SEND_HZ);
-setInterval(() => {
-  if (!cultureDirty) return;
-  cultureDirty = false;
-  broadcast(culture());
-}, 3000);
+setInterval(() => broadcast(snapshots.next(snapshot(world, true))), 1000 / SEND_HZ);
+setInterval(culture, 3000);
 setInterval(() => births.tend(), 2000);
 setInterval(() => store.saveWorld(serialize(world)), SAVE_SECS * 1000);
 

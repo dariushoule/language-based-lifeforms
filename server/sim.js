@@ -33,7 +33,10 @@ const COMPOSE_GAP = 75;        // s between new teachings from one fish, so idea
 const INHERIT = 4;            // teachings a newcomer arrives with, from the fish it follows
 const ARCHIVE = 2000;         // teachings the compendium keeps in all (the least regarded forgotten ones go first)
 const MEMORY = 40;            // remembered events per fish
-const HEARD = 16;             // remembered lines of conversation per fish
+const HEARD = 30;             // remembered lines of conversation per fish
+const CONVERSATION = 14;      // of those, the most recent ones a fish is reminded of each turn
+const NOTES = 6;              // things a fish has chosen to keep in mind (the mind's `remember`)
+const THOUGHTS = 3;           // recent thoughts a fish is reminded of, so its intentions carry over
 const MIND_TIMEOUT = 150;     // s before a silent mind is ignored and instinct takes over
 const THINK_GAP = 1.5;        // s between finishing a plan and asking for the next
 const FAIL_GAP = 4;           // s to pause after an action fails
@@ -183,7 +186,7 @@ function enter(world, arr) {
     thought: 'Where the water ends, there was more water. And now: light.', reasoning: '',
     plan: [{ type: 'swim_to', x: side < 0 ? rand(140, 360) : WORLD.width - rand(140, 360), y }], action: null,
     brain: 'arriving', seq: 0, awaiting: null, nextThinkAt: world.time + 5, rethinkAt: null, talk: null,
-    memory: [], heard: [], impressions: {}, lore: arr.lore.filter((l) => world.lore.has(l.id)).map((l) => ({ ...l, at: world.time, stance: 'holds' })),
+    memory: [], heard: [], notes: [], thoughts: [], impressions: {}, lore: arr.lore.filter((l) => world.lore.has(l.id)).map((l) => ({ ...l, at: world.time, stance: 'holds' })),
     said: null, kills: 0, seeds: [], bitAt: -1e9, bitBy: null, farewelled: false, successor: null,
   };
   world.entities.push(f);
@@ -886,6 +889,10 @@ function perceive(world, f) {
   ];
   const remembered = Object.entries(f.impressions).filter(([i]) => !byId(world, Number(i), 'fish')).slice(-4).map(([, v]) => v);
   const partner = f.talking && byId(world, f.talk.with, 'fish');
+  const here = new Set(others.map((o) => o.name));
+  // The last thing said to this fish since it last spoke, if the one who said it is still here.
+  const lastMine = f.heard.findLastIndex((h) => h.mine);
+  const unanswered = f.heard.slice(lastMine + 1).findLast((h) => h.to === f.name && here.has(h.from));
   return {
     you: {
       id: f.id, name: f.name, voice: f.persona.voice, voice_sample: f.persona.voice_sample,
@@ -915,8 +922,10 @@ function perceive(world, f) {
       id: u.id, x: Math.round(u.x), y: Math.round(u.y), distance: Math.round(dist(f, u)),
       state: u.state === 'resting' ? 'resting on the sand' : u.state === 'falling' ? 'drifting down' : `carried by ${byId(world, u.carriedBy, 'fish')?.name}`,
     })),
-    conversation: f.heard.slice(-8).map((h) =>
-      `${ago(h.at)}, ${h.mine ? 'you' : h.from} said${h.to ? ` to ${h.to === f.name ? 'you' : h.to}` : ''}: "${h.text}"`),
+    conversation: f.heard.slice(-CONVERSATION).map((h) =>
+      `${ago(h.at)}, ${h.mine ? 'you' : h.from}${!h.mine && !here.has(h.from) ? ' (since swum out)' : ''} said${h.to ? ` to ${h.to === f.name ? 'you' : h.to}` : ''}: "${h.text}"`),
+    ...(unanswered ? { said_to_you_and_not_yet_answered: `${unanswered.from}, ${ago(unanswered.at)}: "${unanswered.text}"` } : {}),
+    ...(f.notes?.length ? { notes_to_self: f.notes.map((n) => `${ago(n.at)}: ${n.text}`) } : {}),
     memory: f.memory.slice(-8).map((m) => `${ago(m.at)}: ${recall(m)}`),
     teachings_you_carry: f.lore.map((k) => ({ k, l: world.lore.get(k.id) })).filter(({ l }) => l).map(({ k, l }) => ({
       id: l.id, text: l.text, theme: l.theme,
@@ -925,7 +934,7 @@ function perceive(world, f) {
       learned_from: k.from, your_stance: k.stance, embraced_by: l.agreed?.length ?? 0, disputed_by: l.disputed?.length ?? 0,
     })),
     ...(remembered.length ? { fish_you_remember: remembered } : {}),
-    last_thought: f.thought,
+    recent_thoughts: f.thoughts?.length ? f.thoughts.map((t) => `${ago(t.at)}: ${t.text}`) : [f.thought],
   };
 }
 
@@ -936,7 +945,15 @@ export function applyPlan(world, msg) {
   f.awaiting = null;
   const actions = (Array.isArray(msg.actions) ? msg.actions : []).slice(0, PLAN_MAX).map(normalizeAction)
     .filter((a) => a && Object.values(a).every((v) => v != null));
-  if (typeof msg.thought === 'string' && msg.thought.trim()) f.thought = msg.thought.trim().slice(0, 300);
+  if (typeof msg.thought === 'string' && msg.thought.trim()) {
+    f.thought = msg.thought.trim().slice(0, 300);
+    (f.thoughts ??= []).push({ at: world.time, text: f.thought });
+    if (f.thoughts.length > THOUGHTS) f.thoughts.shift();
+  }
+  if (typeof msg.remember === 'string' && msg.remember.trim()) {
+    (f.notes ??= []).push({ at: world.time, text: msg.remember.trim().slice(0, 200) });
+    if (f.notes.length > NOTES) f.notes.shift();
+  }
   f.feeling = FEELINGS.includes(msg.feeling) ? msg.feeling : null;
   const about = msg.impression && byId(world, msg.impression.fish_id, 'fish');
   if (about && about !== f && typeof msg.impression.text === 'string') f.impressions[about.id] = `${about.name}: ${msg.impression.text.trim().slice(0, 160)}`;
@@ -1158,7 +1175,8 @@ export function step(world, dt) {
 
 // ---------- snapshots and persistence ----------
 
-// Fast fields go out 10 times a second; `full` adds the heavy, slow-changing ones.
+// What observers see of an entity. `full` adds the heavy, slow-changing fields; server/delta.js only
+// sends what changed, so ages are whole seconds.
 function view(world, e, full) {
   switch (e.kind) {
     case 'fish': {
@@ -1166,7 +1184,7 @@ function view(world, e, full) {
         id: e.id, kind: e.kind, name: e.name, x: e.x, y: e.y, vx: e.vx, vy: e.vy, facing: e.facing, size: e.size,
         health: e.health, needs: e.needs, emotion: e.emotion, brain: e.brain, sprite: e.sprite, glow: e.glow,
         doing: doingOf(world, e), said: e.said, bitAt: e.bitAt, gen: e.gen,
-        age: ageOf(world, e), lifespan: e.lifespan, leaving: e.leaving, thought: e.thought,
+        age: Math.floor(ageOf(world, e)), lifespan: e.lifespan, leaving: e.leaving, thought: e.thought,
         carrying: e.carrying ? SANDS.find((c) => c.name === e.carrying).color : null,
       };
       if (full) Object.assign(v, {
@@ -1176,19 +1194,20 @@ function view(world, e, full) {
         predecessorName: e.predecessorName, kills: e.kills,
         plan: e.plan.map((a) => describeAction(world, a)), reasoning: e.reasoning.slice(-500),
         memory: e.memory.slice(-6).map((m) => ({ at: m.at, text: recall(m) })),
+        notes: e.notes ?? [],
         teachings: e.lore.map((k) => ({ k, l: world.lore.get(k.id) })).filter(({ l }) => l).map(({ k, l }) => ({ id: l.id, text: l.text, stance: k.stance, mine: k.from === 'yourself' })),
       });
       return v;
     }
     case 'plant': {
       const v = { id: e.id, kind: e.kind, x: e.x, y: e.y, growth: e.growth, food: e.food, state: e.state, wither: e.wither, fade: e.fade };
-      if (full) Object.assign(v, { name: e.name, genome: e.genome, gen: e.gen, parents: e.parents ?? [], given: e.given, age: e.age });
+      if (full) Object.assign(v, { name: e.name, genome: e.genome, gen: e.gen, parents: e.parents ?? [], given: e.given, age: Math.floor(e.age) });
       return v;
     }
     case 'urchin':
       return { id: e.id, kind: e.kind, x: e.x, y: e.y, hue: e.hue, state: e.state, carrier: e.state === 'carried' ? byId(world, e.carriedBy, 'fish')?.name : null, falls: e.falls };
     case 'corpse':
-      return { id: e.id, kind: e.kind, x: e.x, y: e.y, name: e.name, size: e.size, facing: e.facing, sprite: e.sprite, glow: e.glow, food: e.food, age: e.age, cause: e.cause, gen: e.gen };
+      return { id: e.id, kind: e.kind, x: e.x, y: e.y, name: e.name, size: e.size, facing: e.facing, sprite: e.sprite, glow: e.glow, food: e.food, age: Math.floor(e.age), cause: e.cause, gen: e.gen };
   }
 }
 

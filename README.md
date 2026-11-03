@@ -15,7 +15,7 @@ The mind needs [uv](https://docs.astral.sh/uv/) and an OpenAI-compatible endpoin
 ## How it fits together
 
 ```
- sim (Node, server/)   ── /ws: snapshots at 10Hz, chronicle, compendium ──>  observers (Phaser, client/)
+ sim (Node, server/)   ── /ws: deltas at 10Hz, compendium, departed ──>  observers (Phaser, client/)
    │  /mind: perception and births out, decisions and personas in (bearer MIND_TOKEN)
    │  Wikipedia (1 request per 2s at most) · fal (fish art) · SQLite (data/aquarium.db)
  mind (Python, mind/)  ──>  LLM (DS4 on the Sparks, via vLLM)
@@ -30,7 +30,9 @@ The mind needs [uv](https://docs.astral.sh/uv/) and an OpenAI-compatible endpoin
 - **Needs**: hunger, energy, social and meaning, plus health. Fish eat the glowing pods that plants regrow, or the remains of the dead.
 - **The Codex** (sidebar): every fish in the tank and every one that has swum out, the mandala, and every living plant. Clicking any of them, in the Codex or in the tank, opens its entry.
 - **Plants** are procedural (`shared/plants.js`): a genome of form (kelp, coral, sea fan, anemone, lantern, fern, tube, grass, orb string, vine), hues, glow, pulse, shape and food traits. They sprout, grow, fruit, wither and die, and they evolve: dying plants scatter mutated seedlings, fish carry seeds off in their bellies and pollen from one plant to the next (making hybrids that blend both parents), and now and then a single trait leaps somewhere new. Seeds of a form that crowds the tank, or that land among their own kind, often fail to take root, so no form takes over; spores of entirely new plants drift in every so often, and a new plant grows where a fish's remains fall. The client draws each plant from its genome alone (`client/plants.js`).
-- **The mind decides** (`mind/main.py`, Pydantic AI): a typed `Decision` per turn (thought, feeling, optional speech, a new teaching, a teaching to pass on, a stance, an impression of another fish, 1-4 actions) and a `Persona` per newcomer. By default it answers directly (10-20 seconds a turn) so conversation flows; `BRAIN_THINKING=1` makes it reason first, streamed live into the fish's profile.
+- **The mind decides** (`mind/main.py`, Pydantic AI): a typed `Decision` per turn (thought, feeling, optional speech, a new teaching, a teaching to pass on, a stance, an impression of another fish, a note to remember, 1-4 actions) and a `Persona` per newcomer. By default it answers directly (10-20 seconds a turn) so conversation flows; `BRAIN_THINKING=1` makes it reason first, streamed live into the fish's profile.
+- **Conversation**: the mind keeps nothing between turns, so the sim carries the thread for it. Each fish hears the last 30 lines spoken in earshot and is reminded of the latest 14, of anything said to it that it hasn't answered, of its last few thoughts, and of up to 6 notes it chose to keep (`remember`).
+- **Observers** get deltas (`server/delta.js`): 10 times a second, only the fields that changed; the compendium as the teachings that changed; the 12 fish that last swam out. A new observer gets what the others hold, a tab hidden for 30 seconds lets go of the stream, and an observer too slow to keep up is dropped and resyncs.
 - **Persistence**: the tank is saved to SQLite every 15 seconds and on shutdown, along with the lineage of every fish, the Compendium and the chronicle, so a restart picks up where it left off. Fish art lives in `data/fish/`.
 
 Config lives in `.env`: `BRAIN_URL`, `BRAIN_KEY`, `BRAIN_MODEL`, optional `BRAIN_CF_ID`/`BRAIN_CF_SECRET` for the Cloudflare endpoint, `BRAIN_THINKING`, `BRAIN_THINK_BUDGET`, `MIND_TOKEN`, `SIM_URL`, `MIND_CONCURRENCY`, `FAL_API_KEY`, and `DATA_DIR` (default `data`).

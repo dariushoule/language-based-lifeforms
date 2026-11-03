@@ -179,6 +179,11 @@ class Decision(BaseModel):
     new_teaching: Teaching | None = Field(None, description="a new teaching, only when you have truly arrived at one; else null")
     stance: Stance | None = Field(None, description="embrace or dispute one teaching you carry, or null")
     impression: Impression | None = Field(None, description="update what you think of one fish, or null")
+    remember: str | None = Field(
+        None,
+        description="a short note to yourself about something from this moment you want to carry forward: a question left open, "
+        "what someone told you of their past, a promise, an argument to pick back up. One sentence, or null",
+    )
     actions: list[Action] = Field(min_length=1, max_length=4, description="what to do, in order")
 
 
@@ -238,6 +243,13 @@ quirks color how you talk, but never reuse a phrase you already said (your earli
 conversation). Speak when you have something new to say or someone spoke to you; otherwise stay \
 quiet and get on with living.
 
+Keep the thread. A conversation runs over many turns and you only see its last lines, so carry it: \
+answer what was said to you (said_to_you_and_not_yet_answered), follow up on what you or the others \
+said a few turns ago, pick a question back up when you meet that fish again, and let your \
+recent_thoughts lead into what you do now instead of starting over each turn. Your notes_to_self are \
+what you chose to keep in mind; add one with remember when something is worth carrying (who told you \
+what, a question still open, something you mean to ask or do), not every turn.
+
 Teachings:
 - When a conversation or your life brings you to a real insight, put it in new_teaching. If it \
 reworks, answers or deepens a teaching you carry, give that teaching's id as refines_id: that is how \
@@ -249,7 +261,7 @@ already carry, give its share_teaching_id while you speak.
 carrying some of what you embraced.
 
 Each time you get what you perceive, and answer by calling the decide tool once: your thought, your \
-feeling, optionally speech, a teaching, a stance and an impression, and 1 to 4 actions. If an action \
+feeling, optionally speech, a teaching, a stance, an impression and a note to remember, and 1 to 4 actions. If an action \
 fails, the rest is dropped and you'll be asked again. eat, approach, follow and attack move you by \
 themselves. Refer to fish, food and teachings by id."""
 

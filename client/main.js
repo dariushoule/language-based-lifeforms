@@ -225,12 +225,29 @@ class Tank extends Phaser.Scene {
     this.falling = []; // grains of a finished mandala on their way to the floor
     this.mandalaGlow = this.add.image(MANDALA.x, MANDALA.y, 'glow').setBlendMode(Phaser.BlendModes.ADD).setDepth(DEPTH.mandala)
       .setScale(7).setAlpha(0.05).setTint(0xf2e6c8);
-    this.mandala = this.add.graphics().setDepth(DEPTH.mandala);
+    // The mandala and the sand deposits only change now and then, so they're drawn once into textures
+    // instead of re-tessellating thousands of shapes every frame.
+    const reach = 2 * (MANDALA.inner + MANDALA.rings * MANDALA.step + 4);
+    this.mandala = this.add.renderTexture(MANDALA.x, MANDALA.y, reach, reach).setDepth(DEPTH.mandala);
+    this.mandalaPen = this.make.graphics({ add: false });
     this.mandalaRev = -1;
-    drawMandala(this.mandala, {});
-    drawDeposits(this.add.graphics().setDepth(DEPTH.deposits));
+    this.drawMandala({});
+    const deposits = this.make.graphics({ add: false });
+    drawDeposits(deposits);
+    this.bake(this.add.renderTexture(0, 600, W, H - 600).setOrigin(0, 0).setDepth(DEPTH.deposits), deposits, 0, 600);
+    deposits.destroy();
     // A soft dark ellipse behind each fish keeps it readable in front of bright plants.
     this.shadows = new GlowPool(this, DEPTH.shadow, Phaser.BlendModes.NORMAL); // short-lived glows: fish wakes and spores drifting off plants
+  }
+
+  // Draws Graphics `gfx` (in world coordinates) into render texture `rt`, whose top left is at (x, y).
+  bake(rt, gfx, x, y) {
+    rt.clear().draw(gfx, -x, -y).render();
+  }
+
+  drawMandala(cells) {
+    drawMandala(this.mandalaPen, cells);
+    this.bake(this.mandala, this.mandalaPen, MANDALA.x - this.mandala.width / 2, MANDALA.y - this.mandala.height / 2);
   }
 
   // The grains of a finished mandala let go of the wall and pour down to the sand.
@@ -269,6 +286,15 @@ class Tank extends Phaser.Scene {
       this.load.start();
     }
     return 'blob';
+  }
+
+  // Frees a portrait no one in the tank wears any more (fish come and go for as long as the tab is open).
+  releaseFishTexture(url) {
+    if (!url) return;
+    for (const e of this.ents.values()) if (e.sprite === url) return;
+    const key = `fish:${url}`;
+    if (this.textures.exists(key)) this.textures.remove(key);
+    this.loading?.delete(key);
   }
 
   interactive(obj, id) {
@@ -313,14 +339,18 @@ class Tank extends Phaser.Scene {
     for (const k of ['g', 'img', 'label', 'dots', 'grain', 'glow']) v[k]?.destroy();
   }
 
+  // Snapshots are deltas (server/delta.js): each entity carries only the fields that changed, except
+  // in the first one after connecting, which holds everything.
   onSnapshot(snap) {
-    this.state = snap;
+    this.state = { time: snap.time };
+    if (snap.full) this.ents.clear();
     const seen = new Set();
     for (const e of snap.entities) {
       seen.add(e.id);
       const prev = this.ents.get(e.id);
-      this.ents.set(e.id, snap.full || !prev ? e : { ...prev, ...e });
-      if (!this.views.has(e.id)) this.views.set(e.id, this.spawn(e));
+      const ent = prev ? Object.assign(prev, e) : e;
+      this.ents.set(e.id, ent);
+      if (!this.views.has(e.id)) this.views.set(e.id, this.spawn(ent));
     }
     for (const [id, v] of this.views) if (!seen.has(id)) {
       this.destroyView(v);
@@ -334,9 +364,10 @@ class Tank extends Phaser.Scene {
       this.bubbles.get(id)?.el.remove();
       this.bubbles.delete(id);
       if (this.hovered === id) this.hovered = null;
+      this.releaseFishTexture(e?.sprite);
     }
     updateStatus(this);
-    if (snap.full) {
+    if (snap.mandala) {
       this.mandalaState = snap.mandala;
       if (snap.mandala.rev !== this.mandalaRev || snap.mandala.number !== this.mandalaNumber) {
         // A new mandala means the last one's time is up: its sand falls to the floor.
@@ -344,8 +375,13 @@ class Tank extends Phaser.Scene {
         this.mandalaRev = snap.mandala.rev;
         this.mandalaNumber = snap.mandala.number;
         this.mandalaCells = snap.mandala.cells;
-        drawMandala(this.mandala, snap.mandala.cells);
+        this.drawMandala(snap.mandala.cells);
       }
+    }
+    // The sidebar is rebuilt at most once a second (its ages tick in seconds).
+    const now = performance.now();
+    if (snap.full || snap.mandala || now - (this.panelAt ?? 0) > 1000) {
+      this.panelAt = now;
       renderCodex(this);
       renderProfile(this);
     }
@@ -614,9 +650,7 @@ function updateCover(c) {
 
 // The Codex: who is in the tank, who is on the way, the mandala, the plants, and everyone who has
 // swum out. Any of them opens an entry.
-let lineage = [];
-const SWUM_OUT = 12;      // most recent departed fish listed in the Codex
-const LINEAGE_SENT = 300; // the server sends at most this many (server/index.js LINEAGE)
+let swumOut = { recent: [], total: 0 }; // the fish that most recently swam out (server/index.js SWUM_OUT), newest first
 const departed = new Map();
 let scene = null;
 const plantColor2 = (g) => `#${hsl(g.hue, g.sat, 0.6).toString(16).padStart(6, '0')}`;
@@ -631,13 +665,12 @@ function renderCodex(s) {
   const plant = (e) => `<div class="kin" data-entry="${e.id}"><div class="swatch"><i style="background:${plantColor2(e.genome)};color:${plantColor2(e.genome)}"></i><i style="background:${plantColor(e.genome)};color:${plantColor(e.genome)}"></i></div>
     <div><div class="name" style="color:${plantColor(e.genome)}">${esc(cap(e.name))}</div><div class="meta">${plantState(e)}</div></div></div>`;
   const m = s.mandalaState;
-  const allGone = lineage.filter((f) => f.diedAt).reverse();
-  const gone = allGone.slice(0, SWUM_OUT);
+  const gone = swumOut.recent;
   const html = `<div class="sec">In the tank</div>${living.map((f) => kin(f, false)).join('') || '<div class="empty">No one yet.</div>'}` +
     (m ? `<div class="sec">The mandala</div><div class="kin" data-entry="mandala"><div class="swatch"><i style="background:#f2e6c8;color:#f2e6c8"></i></div><div><div class="name">The ${ordinal(m.number)} mandala</div><div class="meta">${m.completedAt != null ? `complete · its sand falls in ${fallsIn(s, m)}` : mandalaProgress(m.cells)}</div></div></div>` : '') +
     `<div class="sec">Plants (${plants.length})</div>${plants.map(plant).join('')}` +
     `<div class="sec">Swum out</div>${gone.map((f) => kin(f, true)).join('') || '<div class="empty">No one has left yet.</div>'}` +
-    (allGone.length > gone.length ? `<div class="empty">and ${allGone.length - gone.length}${lineage.length >= LINEAGE_SENT ? '+' : ''} before them</div>` : '');
+    (swumOut.total > gone.length ? `<div class="empty">and ${swumOut.total - gone.length} before them</div>` : '');
   replace(panes.codex, html);
 }
 panes.codex.addEventListener('click', (ev) => {
@@ -688,7 +721,7 @@ function replace(pane, html) {
 function renderProfile(s) {
   if (profileId == null || !s) return;
   if (profileId === 'mandala') return setEntry(mandalaEntry(s));
-  const e = s.ents.get(profileId) ?? departed.get(profileId) ?? lineage.find((f) => f.id === profileId);
+  const e = s.ents.get(profileId) ?? departed.get(profileId) ?? swumOut.recent.find((f) => f.id === profileId);
   if (!e) return setEntry(`${back}<div class="empty">Gone from the tank.</div>`);
   setEntry(e.kind === 'plant' ? plantEntry(s, e) : fishEntry(s, e));
 }
@@ -732,6 +765,7 @@ function fishEntry(s, e) {
   const doing = !live ? 'swam out past the edge' : e.doing ? `${e.doing}${e.plan?.length ? `, then ${e.plan.join(', then ')}` : ''}` : e.brain === 'thinking' ? 'pausing to think' : 'drifting';
   const reasoning = live && e.reasoning ? `<div class="muted">${e.brain === 'thinking' ? 'Thinking it through…' : 'How it decided'}</div><p class="reasoning">${esc(e.reasoning.trim().replace(/\s+/g, ' ').slice(-400))}</p>` : '';
   const carried = e.teachings?.length ? `<div class="sec">Musing</div><ul class="carried">${e.teachings.map((t) => `<li>${esc(t.text)} <span>${t.mine ? 'its own' : t.stance === 'embraces' ? 'embraced' : t.stance === 'disputes' ? 'disputed' : ''}</span></li>`).join('')}</ul>` : '';
+  const notes = live && e.notes?.length ? `<div class="sec">Keeps in mind</div><ul>${e.notes.slice().reverse().map((n) => `<li>${esc(n.text)} <span class="muted">${span(s.state.time - n.at)} ago</span></li>`).join('')}</ul>` : '';
   const memory = live && e.memory?.length ? `<div class="sec">Log</div><ul>${e.memory.slice().reverse().map((m) => `<li>${esc(m.text)} <span class="muted">${span(s.state.time - m.at)} ago</span></li>`).join('')}</ul>` : '';
   return back +
     (e.sprite ? `<img class="portrait" src="${esc(e.sprite)}" alt="" style="--c:${esc(e.glow ?? '#7fe0ff')}">` : '') +
@@ -743,7 +777,7 @@ function fishEntry(s, e) {
     (live ? `<p class="quote">“${esc(e.thought)}”</p>${reasoning}<p><b>Doing:</b> ${esc(doing)}</p>` +
       bars([['health', e.health], ['fed', e.needs.hunger], ['energy', e.needs.energy], ['social', e.needs.social], ['meaning', e.needs.meaning]])
       : `<p class="muted">${esc(cap(howDied(e.cause ?? 'swam out past the edge')))}.</p>`) +
-    carried + memory +
+    carried + notes + memory +
     // What it remembers of its life before the tank: the oldest things it knows, so they come last.
     ((e.origins ?? p.memories)?.length ? `<div class="sec">Glimmers of Memory</div><ul>${(e.origins ?? p.memories).map((m) => `<li>${esc(m)}</li>`).join('')}</ul>` : '');
 }
@@ -758,17 +792,54 @@ function updateStatus(s) {
   status.textContent = `${fish} fish · ${plants} plants · generation ${gen || 1} · tank time ${span(s.state.time)}`;
 }
 
+// The compendium arrives whole once, then as the teachings that changed (server/delta.js).
+const teachings = new Map();
+function onCompendium(msg) {
+  if (msg.full) teachings.clear();
+  for (const t of msg.upsert) teachings.set(t.id, t);
+  for (const id of teachings.keys()) if (!msg.ids.includes(id)) teachings.delete(id);
+  const c = { ...msg.head, teachings: msg.ids.map((id) => teachings.get(id)).filter(Boolean) };
+  book.update(c);
+  updateCover(c);
+}
+
+// The live connection. A tab that's been hidden for a while lets go of it (nobody is watching, and
+// the tank streams constantly) and picks it back up when it's shown again. Reconnects back off,
+// with jitter, so a restarted server isn't hit by every observer at once.
+let socket = null, retries = 0, hiddenTimer = null;
+const HIDDEN_GRACE = 30000;
 function connect(s) {
   scene = s;
+  if (socket || document.hidden) return;
   const proto = location.protocol === 'https:' ? 'wss' : 'ws';
-  const ws = new WebSocket(`${proto}://${location.host}/ws`);
+  const ws = (socket = new WebSocket(`${proto}://${location.host}/ws`));
+  ws.onopen = () => { retries = 0; };
   ws.onmessage = (m) => {
     const msg = JSON.parse(m.data);
     if (msg.t === 'snap') s.onSnapshot(msg);
-    else if (msg.t === 'culture') { book.update(msg.compendium); updateCover(msg.compendium); lineage = msg.lineage; renderCodex(s); }
+    else if (msg.t === 'compendium') onCompendium(msg);
+    else if (msg.t === 'departed') { swumOut = msg; renderCodex(s); }
   };
-  ws.onclose = () => { status.textContent = 'reconnecting…'; setTimeout(() => connect(s), 1500); };
+  ws.onclose = () => {
+    if (socket !== ws) return;
+    socket = null;
+    if (document.hidden) return;
+    status.textContent = 'reconnecting…';
+    const wait = Math.min(30000, 1500 * 2 ** retries++) * (0.5 + Math.random());
+    setTimeout(() => connect(s), wait);
+  };
 }
+document.addEventListener('visibilitychange', () => {
+  clearTimeout(hiddenTimer);
+  if (document.hidden) {
+    hiddenTimer = setTimeout(() => {
+      const ws = socket;
+      socket = null;
+      ws?.close();
+      status.textContent = 'paused while hidden';
+    }, HIDDEN_GRACE);
+  } else if (!socket && scene) connect(scene);
+});
 
 new Phaser.Game({
   type: Phaser.WEBGL,
