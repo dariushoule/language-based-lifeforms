@@ -1,0 +1,8 @@
+[project]
+name = "lbl-mind"
+version = "0.1.0"
+requires-python = ">=3.13"
+dependencies = [
+    "pydantic-ai-slim[openai]>=2.64.0",
+    "websockets>=17.4",
+]

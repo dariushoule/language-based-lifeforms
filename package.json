@@ -3,13 +3,14 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "dev": "concurrently -n sim,web \"npm:dev:server\" \"npm:dev:client\"",
+    "dev": "concurrently -n sim,web,mind \"npm:dev:server\" \"npm:dev:client\" \"npm:dev:mind\"",
     "dev:server": "node --watch server/index.js",
     "dev:client": "vite client",
     "build": "vite build client --outDir ../dist",
     "art": "node tools/gen-art.js",
-    "lbl": "node tools/lbl-body.js",
-    "pixelize": "node tools/pixelize.js"
+    "sprites": "node tools/draw-sprites.js",
+    "pixelize": "node tools/pixelize.js",
+    "dev:mind": "uv run --project mind python mind/main.py"
   },
   "dependencies": {
     "ws": "^8.22.1"
