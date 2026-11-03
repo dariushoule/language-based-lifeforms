@@ -35,6 +35,8 @@
     #tank { position: relative; flex: 1; min-width: 0; display: flex; align-items: center; justify-content: center; overflow: hidden; }
     #tank canvas { display: block; }
     #bubbles { position: absolute; inset: 0; pointer-events: none; overflow: hidden; }
+    #diag { position: absolute; left: 8px; bottom: 8px; z-index: 5; display: none; max-width: calc(100% - 16px); padding: 6px 9px;
+      white-space: pre-wrap; font: 11px/1.4 ui-monospace, monospace; color: #ffd6a0; background: #000c; border: 1px solid #5a3c1c; border-radius: 6px; }
     .bubble { position: absolute; width: max-content; max-width: 250px; padding: 7px 10px 8px; border-radius: 12px; background: #04131dd9;
       border: 1px solid var(--c, var(--accent)); color: #e6f4f8; font: 12px/1.42 Fraunces, Georgia, serif;
       box-shadow: 0 0 18px -6px var(--c, var(--accent)); transform: translate(-50%, -100%); transition: opacity 0.8s; }

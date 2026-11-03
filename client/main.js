@@ -29,6 +29,32 @@ class GlowPool {
   end() { for (let i = this.used; i < this.items.length; i++) this.items[i].setVisible(false); }
 }
 
+// Phones and tablets get a lighter tank: no full-screen post effects (bloom, vignette, masked
+// caustics), which are the costliest thing to render and the likeliest to fail on a mobile GPU, and
+// fewer particles. ?fx=1 forces the full tank, ?lite=1 the light one; ?debug shows what the GPU is.
+const params = new URLSearchParams(location.search);
+const LITE = params.has('lite') || (!params.has('fx') && matchMedia('(pointer: coarse)').matches);
+const DEBUG = params.has('debug');
+
+// Problems that would otherwise leave a silent black tank are shown over it, so they can be read off
+// any device.
+const diag = document.createElement('div');
+diag.id = 'diag';
+document.getElementById('tank').appendChild(diag);
+const diagLines = [];
+function note(line) {
+  diagLines.push(line);
+  diag.textContent = diagLines.slice(-6).join('\n');
+  diag.style.display = 'block';
+}
+addEventListener('error', (e) => note(`error: ${e.message}${e.filename ? ` (${e.filename.split('/').pop()}:${e.lineno})` : ''}`));
+addEventListener('unhandledrejection', (e) => note(`error: ${e.reason?.message ?? e.reason}`));
+// Phaser reports shader and framebuffer failures on the console rather than throwing.
+for (const level of DEBUG ? ['error', 'warn'] : ['error']) {
+  const original = console[level].bind(console);
+  console[level] = (...args) => { note(`${level}: ${args.map(String).join(' ').slice(0, 240)}`); original(...args); };
+}
+
 class Tank extends Phaser.Scene {
   constructor() { super('tank'); }
 
@@ -43,12 +69,26 @@ class Tank extends Phaser.Scene {
     this.podGlow = new GlowPool(this, DEPTH.pod);
     this.floorGlow = new GlowPool(this, DEPTH.plantGlow);
     this.halos = new GlowPool(this, DEPTH.halo);
-    Phaser.Actions.AddEffectBloom(this.cameras.main, { threshold: 0.42, blurRadius: 2.5, blurSteps: 5, blurQuality: 1, blendAmount: 0.85 });
-    this.cameras.main.filters.external.addVignette(0.5, 0.5, 0.95, 0.45);
+    if (!LITE) {
+      try {
+        Phaser.Actions.AddEffectBloom(this.cameras.main, { threshold: 0.42, blurRadius: 2.5, blurSteps: 5, blurQuality: 1, blendAmount: 0.85 });
+        this.cameras.main.filters.external.addVignette(0.5, 0.5, 0.95, 0.45);
+      } catch (e) { note(`effects off: ${e.message}`); }
+    }
+    this.game.canvas.addEventListener('webglcontextlost', () => note('the GPU dropped the WebGL context; reload to try again'));
+    if (DEBUG) this.showGpu();
     this.input.on('pointermove', (p) => (this.pointer = { x: p.event.clientX, y: p.event.clientY }));
     this.input.on('gameout', () => { this.hovered = null; });
     connect(this);
     if (import.meta.env.DEV) window.tank = this; // for poking at the scene from the console
+  }
+
+  showGpu() {
+    const gl = this.game.renderer.gl;
+    const info = gl?.getExtension('WEBGL_debug_renderer_info');
+    note(`${LITE ? 'lite' : 'full'} · ${this.game.renderer.type === Phaser.WEBGL ? 'WebGL' : 'Canvas'} · ` +
+      `${info ? gl.getParameter(info.UNMASKED_RENDERER_WEBGL) : gl?.getParameter(gl.RENDERER)} · max texture ${gl?.getParameter(gl.MAX_TEXTURE_SIZE)} · ` +
+      `${innerWidth}x${innerHeight} @${devicePixelRatio}`);
   }
 
   // ---------- textures and backdrop ----------
@@ -179,16 +219,22 @@ class Tank extends Phaser.Scene {
     t.refresh();
     this.add.image(0, 0, 'backdrop').setOrigin(0, 0).setDepth(DEPTH.bg);
 
-    // Caustics dance over the sand (two nets drifting apart), masked to the sand's own shape.
+    // Caustics dance over the sand (two nets drifting apart), masked to the sand's own shape. The light
+    // tank skips the mask and starts them at the sand's average height instead.
     const sandShape = this.make.graphics({ add: false }).fillStyle(0xffffff).beginPath().moveTo(0, H);
     for (let x = 0; x <= W; x += 8) sandShape.lineTo(x, sandAt(x));
     sandShape.lineTo(W, H).closePath().fillPath();
+    const top = LITE ? 650 : 600;
     this.caustics = [['caustA', 0.3, 1.8], ['caustB', 0.2, 1.1]].map(([key, alpha, scale]) => {
-      const tile = this.add.tileSprite(0, 600, W, H - 600, key).setOrigin(0, 0).setDepth(DEPTH.caustics)
+      const tile = this.add.tileSprite(0, top, W, H - top, key).setOrigin(0, 0).setDepth(DEPTH.caustics)
         .setBlendMode(Phaser.BlendModes.ADD).setAlpha(alpha).setTint(0xaef2ff).setTileScale(scale, scale * 0.5);
-      // A screen-space mask: the internal (object-space) one hid the whole layer.
-      tile.enableFilters();
-      tile.filters.external.addMask(sandShape);
+      if (!LITE) {
+        try {
+          // A screen-space mask: the internal (object-space) one hid the whole layer.
+          tile.enableFilters();
+          tile.filters.external.addMask(sandShape);
+        } catch (e) { note(`caustic mask off: ${e.message}`); }
+      }
       return tile;
     });
 
@@ -201,7 +247,7 @@ class Tank extends Phaser.Scene {
     this.glints = Array.from({ length: 34 }, () => this.add.image(Math.random() * W, WORLD.surface - 1, 'mote')
       .setBlendMode(Phaser.BlendModes.ADD).setDepth(DEPTH.rays).setTint(0xd8f8ff).setScale(0.5 + Math.random() * 0.8)
       .setData({ phase: Math.random() * 10, speed: 0.6 + Math.random() * 1.6 }));
-    this.snow = Array.from({ length: 150 }, () => {
+    this.snow = Array.from({ length: LITE ? 70 : 150 }, () => {
       const near = Math.random() < 0.2;
       return this.add.image(Math.random() * W, Math.random() * H, 'mote').setDepth(near ? DEPTH.snowNear : DEPTH.snowFar)
         .setScale(near ? 0.7 + Math.random() * 0.6 : 0.25 + Math.random() * 0.4).setAlpha(near ? 0.25 : 0.12 + Math.random() * 0.25)
@@ -209,14 +255,14 @@ class Tank extends Phaser.Scene {
     });
     // Bioluminescent plankton: faint until a fish swims through, then they flare.
     const tints = [0x7fffd4, 0x7fdcff, 0xb4ffa0, 0x9fb8ff];
-    this.plankton = Array.from({ length: 220 }, () => {
+    this.plankton = Array.from({ length: LITE ? 90 : 220 }, () => {
       const x = Math.random() * W;
       return this.add.image(x, WORLD.surface + 30 + Math.random() * (sandAt(x) - WORLD.surface - 50), 'mote')
         .setBlendMode(Phaser.BlendModes.ADD).setDepth(DEPTH.plankton).setTint(tints[Math.floor(Math.random() * tints.length)])
         .setData({ base: 0.05 + Math.random() * 0.12, s0: 0.25 + Math.random() * 0.35, flare: 0, phase: Math.random() * 10 });
     });
     // Out-of-focus motes drifting right in front of the glass.
-    this.bokeh = Array.from({ length: 10 }, () => this.add.image(Math.random() * W, Math.random() * H, 'glow')
+    this.bokeh = Array.from({ length: LITE ? 4 : 10 }, () => this.add.image(Math.random() * W, Math.random() * H, 'glow')
       .setBlendMode(Phaser.BlendModes.ADD).setDepth(DEPTH.bokeh).setScale(2.5 + Math.random() * 4.5)
       .setAlpha(0.02 + Math.random() * 0.035).setTint([0x7fdcff, 0xa78bff, 0x7fffd4][Math.floor(Math.random() * 3)])
       .setData({ vx: (Math.random() - 0.5) * 6, vy: (Math.random() - 0.5) * 3 }));
