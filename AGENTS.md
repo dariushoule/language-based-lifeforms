@@ -1,6 +1,7 @@
 # Agent notes
 
-See README.md for what the aquarium is and how the pieces fit together.
+See README.md for what the aquarium is and how the pieces fit together. The host (`server/`) runs one
+simulation from `sims/<name>/`, picked (and paused or not) in `sims/live.js`; the aquarium is `sims/aquarium/`.
 
 ## Deploying to hac.run
 
@@ -12,8 +13,9 @@ What runs where:
 
 - **The sim** runs on the droplet as `lbl.service` (systemd, user `lbl`) from a git checkout in `/opt/lbl`,
   listening on `127.0.0.1:8080`. It serves the built client from `/opt/lbl/dist`.
-- **The mind** runs on the droplet as `lbl-mind.service` (user `lbl`, Python from `/opt/lbl/mind/.venv`,
-  set up with `uv sync`). It connects to the sim over `ws://127.0.0.1:8080/mind`, and reaches DS4 through
+- **The mind** runs on the droplet as `lbl-mind.service` (user `lbl`, Python from
+  `/opt/lbl/sims/aquarium/mind/.venv`, set up with `uv sync`). While the aquarium is paused it's stopped and
+  disabled (the sim turns minds away). It connects to the sim over `ws://127.0.0.1:8080/mind`, and reaches DS4 through
   the Cloudflare tunnel at `https://sparks-a.alturas.ai/v1` with the Access service-token headers
   (`BRAIN_CF_ID` / `BRAIN_CF_SECRET`).
 - **Caddy** (`/etc/caddy/Caddyfile`) terminates TLS for `hac.run` (Let's Encrypt, renewed automatically)
@@ -27,7 +29,7 @@ What runs where:
   only write there.
 
 Cloudflare drops a request that sends nothing back for 100 seconds, so every call the mind makes streams
-(see `run_streaming` in `mind/main.py`). Keep it that way when adding calls.
+(see `run_streaming` in `sims/aquarium/mind/main.py`). Keep it that way when adding calls.
 
 ### Steps
 
@@ -44,10 +46,10 @@ Cloudflare drops a request that sends nothing back for 100 seconds, so every cal
    sudo -u lbl git log --oneline -1
    # Only when package-lock.json changed:
    # sudo -u lbl npm ci
-   # Only when client/ or shared/ changed:
+   # Only when a sim's client/ or shared/ changed, or sims/live.js switched simulations:
    sudo -u lbl npm run build
-   # Only when mind/pyproject.toml or mind/uv.lock changed:
-   # sudo -u lbl env HOME=/var/lib/lbl UV_PYTHON_INSTALL_DIR=/var/lib/lbl/python UV_CACHE_DIR=/var/lib/lbl/.cache/uv uv sync -q --project mind --frozen
+   # Only when sims/aquarium/mind/pyproject.toml or uv.lock changed:
+   # sudo -u lbl env HOME=/var/lib/lbl UV_PYTHON_INSTALL_DIR=/var/lib/lbl/python UV_CACHE_DIR=/var/lib/lbl/.cache/uv uv sync -q --project sims/aquarium/mind --frozen
    systemctl restart lbl.service lbl-mind.service
    sleep 5
    journalctl -u lbl --no-pager -n 5 -o cat
@@ -63,9 +65,21 @@ Cloudflare drops a request that sends nothing back for 100 seconds, so every cal
 3. Check https://hac.run in a browser: fish moving, the Codex filled in, speech bubbles once the mind
    answers.
 
-Server-only changes (`server/`) need just the pull and `systemctl restart lbl.service`; mind-only changes
-(`mind/main.py`), just `systemctl restart lbl-mind.service`. Watching the logs:
+Server-only changes (`server/`, `sims/*/server/`) need just the pull and `systemctl restart lbl.service`;
+mind-only changes (`sims/aquarium/mind/main.py`), just `systemctl restart lbl-mind.service`. Watching the logs:
 `ssh root@165.232.128.96 "journalctl -u lbl -u lbl-mind -f -o cat"`.
+
+### Pausing, waking and swapping
+
+`LIVE` in `sims/live.js` names the simulation and whether it's paused. A paused one is shown frozen as
+it was left, under its note; it doesn't step or save, and `/mind` answers 503. To pause or wake: change
+`paused`, commit, push, pull on the droplet and `systemctl restart lbl.service` (no build needed). Stop the
+mind while paused (`systemctl disable --now lbl-mind`), and when waking the aquarium set it up again:
+`uv sync` as above, and the unit's `ExecStart` must be
+`/opt/lbl/sims/aquarium/mind/.venv/bin/python sims/aquarium/mind/main.py` (then
+`systemctl daemon-reload && systemctl enable --now lbl-mind`). Swapping in another simulation is the same
+plus `npm run build`, and its own mind service if it has one. Each simulation keeps its own files in
+`/var/lib/lbl/data` (the aquarium's are `aquarium.db*` and `fish/`).
 
 Starting over (a fresh tank): stop both units, delete `/var/lib/lbl/data/aquarium.db*` (keep `fish/pool`,
 a cache of paid-for portraits), and start them again.

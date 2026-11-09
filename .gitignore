@@ -2,6 +2,6 @@ node_modules
 dist
 art/raw
 .env
-mind/.venv
+.venv
 __pycache__
 data

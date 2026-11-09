@@ -50,7 +50,7 @@ def load_env(path: Path) -> None:
             os.environ.setdefault(key.strip(), value.strip())
 
 
-load_env(Path(__file__).resolve().parent.parent / ".env")
+load_env(Path(__file__).resolve().parents[3] / ".env")  # the repo root
 
 # Conversation is the point of the aquarium, and a turn that takes minutes kills it, so the mind
 # answers directly by default (10-20 seconds a turn). Thinking is still there for richer, slower fish.

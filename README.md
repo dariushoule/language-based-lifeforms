@@ -10,9 +10,26 @@ cp .env.example .env   # then fill it in
 npm run dev            # sim on :8080, web on :5173, mind connected to the sim
 ```
 
+While the aquarium is paused (see below), `npm run dev` shows it frozen; put `PAUSED=0` in `.env` to run it.
+
 The mind needs [uv](https://docs.astral.sh/uv/) and an OpenAI-compatible endpoint; fish art needs `FAL_API_KEY`. Without a mind (or when it is slow or down) fish act on a simple instinct, and newcomers arrive with a plain stand-in personality.
 
-## How it fits together
+## Simulations
+
+hac.run runs one simulation at a time, and they can be swapped in and out. Each lives in `sims/<name>/`
+with its own server, client and (optionally) mind; the aquarium is `sims/aquarium/`. The host
+(`server/index.js`) runs whichever one `sims/live.js` names: it serves its built client and files,
+streams it to observers on `/ws`, and hands its mind over on `/mind`. `sims/live.js` also says what a
+simulation has to provide.
+
+A simulation can be **paused**: it's loaded as it was left and shown frozen, under its note ("the fish are
+sleeping… check back soon"), and it doesn't step, save or take a mind. `paused` in `sims/live.js` sets it
+for production; `SIM` and `PAUSED` in `.env` override it locally (`PAUSED=0` to run a paused one). Pausing
+or waking only needs a restart; switching simulations also needs `npm run build`.
+
+## How the aquarium fits together
+
+Code paths below are in `sims/aquarium/`; `data/` is at the repo root.
 
 ```
  sim (Node, server/)   ── /ws: deltas at 10Hz, compendium, departed ──>  observers (Phaser, client/)
@@ -35,4 +52,4 @@ The mind needs [uv](https://docs.astral.sh/uv/) and an OpenAI-compatible endpoin
 - **Observers** get deltas (`server/delta.js`): 10 times a second, only the fields that changed; the compendium as the teachings that changed; the 12 fish that last swam out. A new observer gets what the others hold, a tab hidden for 30 seconds lets go of the stream, and an observer too slow to keep up is dropped and resyncs.
 - **Persistence**: the tank is saved to SQLite every 15 seconds and on shutdown, along with the lineage of every fish, the Compendium and the chronicle, so a restart picks up where it left off. Fish art lives in `data/fish/`.
 
-Config lives in `.env`: `BRAIN_URL`, `BRAIN_KEY`, `BRAIN_MODEL`, optional `BRAIN_CF_ID`/`BRAIN_CF_SECRET` for the Cloudflare endpoint, `BRAIN_THINKING`, `BRAIN_THINK_BUDGET`, `MIND_TOKEN`, `SIM_URL`, `MIND_CONCURRENCY`, `FAL_API_KEY`, and `DATA_DIR` (default `data`).
+Config lives in `.env` at the repo root: `SIM`, `PAUSED`, `BRAIN_URL`, `BRAIN_KEY`, `BRAIN_MODEL`, optional `BRAIN_CF_ID`/`BRAIN_CF_SECRET` for the Cloudflare endpoint, `BRAIN_THINKING`, `BRAIN_THINK_BUDGET`, `MIND_TOKEN`, `SIM_URL`, `MIND_CONCURRENCY`, `FAL_API_KEY`, and `DATA_DIR` (default `data`).

@@ -871,16 +871,28 @@ function onCompendium(msg) {
 // the tank streams constantly) and picks it back up when it's shown again. Reconnects back off,
 // with jitter, so a restarted server isn't hit by every observer at once.
 let socket = null, retries = 0, hiddenTimer = null;
+const sleep = document.getElementById('sleep');
+// The note is set as a line and, after its ellipsis, a quieter one ("the fish are sleeping…" / "check back soon").
+function sleeping(text) {
+  const [head, ...rest] = (text ?? '').split(/(?<=…|\.\.\.)\s+/);
+  const p = sleep.querySelector('p');
+  p.textContent = head;
+  if (rest.length) p.append(Object.assign(document.createElement('span'), { textContent: rest.join(' ') }));
+  sleep.hidden = !text;
+}
 const HIDDEN_GRACE = 30000;
 function connect(s) {
   scene = s;
   if (socket || document.hidden) return;
   const proto = location.protocol === 'https:' ? 'wss' : 'ws';
   const ws = (socket = new WebSocket(`${proto}://${location.host}/ws`));
+  let paused = false;
   ws.onopen = () => { retries = 0; };
   ws.onmessage = (m) => {
     const msg = JSON.parse(m.data);
-    if (msg.t === 'snap') s.onSnapshot(msg);
+    // A paused tank sends a note first, then the tank as it was left, and nothing after.
+    if (msg.t === 'paused') { paused = true; sleeping(msg.text); }
+    else if (msg.t === 'snap') { if (msg.full && !paused) sleeping(null); s.onSnapshot(msg); }
     else if (msg.t === 'compendium') onCompendium(msg);
     else if (msg.t === 'departed') { swumOut = msg; renderCodex(s); }
   };
