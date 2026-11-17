@@ -1,5 +1,5 @@
 import Phaser from 'phaser';
-import { WORLD, POND, SPIRAL, LANTERN, MOON, NIGHT, LUNATION, plotPos, spiralPoint, skyAt, cloudsAt, lightWord } from '../shared/garden.js';
+import { WORLD, POND, SPIRAL, LANTERN, MOON, plotPos, spiralPoint, skyAt, cloudsAt, lightWord } from '../shared/garden.js';
 import { opensWords, hueWord, speciesName } from '../shared/flora.js';
 import { drawPlant, plantBounds, hsl, mix } from './flora.js';
 import { darkShape, moonSvg, phaseName } from './moon.js';
@@ -910,15 +910,6 @@ function skyLine(sky) {
   return `Night ${sky.night + 1} · ${sky.pale > 0.5 ? 'the pale' : moon} · ${weather(sky)}`;
 }
 
-// When the moon next rises or sets, and the next full and new moons, by looking ahead.
-function almanac(time) {
-  const now = skyAt(time);
-  let turn = null;
-  for (let t = time; t < time + NIGHT * 3 && turn == null; t += 5) if (skyAt(t).up !== now.up) turn = t - time;
-  const nights = (to) => (((to - now.phase + 1) % 1) * LUNATION);
-  return { turn, toFull: nights(0.5), toNew: nights(0) };
-}
-
 const TIPS = {
   firefly: (e) => `<b>${esc(e.name)}</b> <span class="muted">· gen ${e.gen} · ${esc(e.emotion)}</span><div class="muted">${esc(e.leaving ? 'rising out of the garden' : e.doing ?? (e.brain === 'thinking' ? 'thinking' : 'hovering'))}</div><div class="hint">click to open</div>`,
   plant: (e) => (e.genome ? `<b>${esc(cap(e.name ?? 'a plant'))}</b><div class="muted">${e.plot != null ? `plot ${e.plot} of the spiral · ` : ''}${plantState(e)}</div><div class="muted">${esc(cap(opensWords(e.genome)))}</div>` : ''),
@@ -953,28 +944,26 @@ function updateCover(c) {
 
 const lamp = (f, cls = '') => `<div class="lamp ${esc((f.flash ?? '').replace(' ', '-'))} ${cls}" style="--c:${esc(f.glow ?? '#dff27a')}"><i></i></div>`;
 
-// The Codex: who is in the garden, the sky, the spiral, the plants, and everyone who has risen.
+// The Codex: who is in the garden, the sky, the spiral, and the names of those who have risen.
+// It says what is there and no more; what any of it means is for the fireflies to work out.
 let risen = { recent: [], total: 0 }; // the fireflies that most recently rose (server/index.js RISEN), newest first
 const departed = new Map();
 let scene = null;
 function renderCodex(s) {
   const all = [...s.ents.values()];
   const living = all.filter((e) => e.kind === 'firefly');
-  const plants = all.filter((e) => e.kind === 'plant' && e.genome && e.plot == null && e.state !== 'dead' && e.state !== 'withering').sort((a, b) => a.x - b.x);
   const sky = skyAt(s.state.time);
-  const kin = (f, gone) => `<div class="kin${gone ? ' gone' : ''}" data-entry="${f.id}">${lamp(f)}
+  const kin = (f) => `<div class="kin" data-entry="${f.id}">${lamp(f)}
     <div><div class="name" style="color:${esc(f.glow ?? '#c9d0ee')}">${esc(f.name)}</div>
-    <div class="meta">generation ${f.gen}${f.predecessorName ? ` · followed ${esc(f.predecessorName)}` : ''}${gone ? ' · risen' : f.seenMoon === false ? ' · has not seen the moon' : ''}</div>
+    <div class="meta">generation ${f.gen}${f.seenMoon === false ? ' · has not seen the moon' : ''}</div>
     ${f.persona?.hunch ? `<div class="phil">${esc(f.persona.hunch)}</div>` : ''}</div></div>`;
-  const plant = (e) => `<div class="kin" data-entry="${e.id}"><div class="swatch"><i style="background:${leafColor(e.genome)};color:${leafColor(e.genome)}"></i><i style="background:${flowerColor(e.genome)};color:${flowerColor(e.genome)}"></i></div>
-    <div><div class="name" style="color:${flowerColor(e.genome)}">${esc(cap(e.name))}</div><div class="meta">${plantState(e)}</div></div></div>`;
+  // Those who have risen are only names now; their entries still open.
+  const name = (f) => `<span data-entry="${f.id}" style="color:${esc(f.glow ?? '#c9d0ee')}">${esc(f.name)}</span>`;
   const sp = s.top.spiral;
-  const html = `<div class="sec">In the garden</div>${living.map((f) => kin(f, false)).join('') || '<div class="empty">No one yet.</div>'}` +
+  const html = `<div class="sec">In the garden</div>${living.map(kin).join('') || '<div class="empty">No one yet.</div>'}` +
     `<div class="sec">Overhead</div><div class="kin" data-entry="sky"><div class="swatch">${moonSvg(sky.phase, { absent: !sky.up, rust: sky.eclipse > 0.3 })}</div><div><div class="name">The moon</div><div class="meta">${esc(phaseName(sky.phase))}, ${esc(moonWhere(sky))} · moonlight ${lightWord(sky.light)}</div></div></div>` +
     (sp ? `<div class="sec">The shared work</div><div class="kin" data-entry="spiral"><div class="swatch"><i style="background:#f2ecc0;color:#f2ecc0"></i></div><div><div class="name">The ${ordinal(sp.number)} spiral</div><div class="meta">${spiralProgress(s)}</div></div></div>` : '') +
-    `<div class="sec">Growing wild (${plants.length})</div>${plants.map(plant).join('')}` +
-    `<div class="sec">Risen</div>${risen.recent.map((f) => kin(f, true)).join('') || '<div class="empty">No one has risen yet.</div>'}` +
-    (risen.total > risen.recent.length ? `<div class="empty">and ${risen.total - risen.recent.length} before them</div>` : '');
+    (risen.recent.length ? `<div class="sec">Risen</div><div class="names">${risen.recent.map(name).join('')}${risen.total > risen.recent.length ? `<i>and ${risen.total - risen.recent.length} before</i>` : ''}</div>` : '');
   replace(panes.codex, html);
 }
 panes.codex.addEventListener('click', (ev) => {
@@ -982,7 +971,7 @@ panes.codex.addEventListener('click', (ev) => {
   if (k) openProfile(/^\d+$/.test(k.dataset.entry) ? Number(k.dataset.entry) : k.dataset.entry);
 });
 
-// What a plant is like, in a sentence or two, from its genome.
+// What a plant is like, in a sentence, from its genome.
 const FORM_WORDS = {
   bell: 'arching stems hung with bells', star: 'upright stems, each with one open-faced flower', trumpet: 'stout stems carrying great trumpets', spire: 'a tall spike of florets',
   umbel: 'stems that break into umbrellas of tiny florets', fern: 'arching, curl-tipped fronds dotted with light', grass: 'a tuft of blades with glowing plumes',
@@ -991,8 +980,7 @@ const FORM_WORDS = {
 };
 function describePlant(g) {
   const size = g.form === 'lily' || g.form === 'cap' ? '' : g.height > 170 ? 'Tall: ' : g.height < 70 ? 'Low: ' : '';
-  const follows = g.form !== 'cap' && g.form !== 'fern' && g.form !== 'grass' ? (g.turn > 0.65 ? ' Its flowers turn to follow the moon across the sky.' : g.turn < 0.2 ? ' Its flowers pay the moon no mind.' : '') : '';
-  return `${size}${size ? FORM_WORDS[g.form] : cap(FORM_WORDS[g.form])}, ${hueWord(g.hue2)} with a ${hueWord(g.hue3)} heart. It ${opensWords(g)}.${follows}`;
+  return `${size}${size ? FORM_WORDS[g.form] : cap(FORM_WORDS[g.form])}, ${hueWord(g.hue2)} with a ${hueWord(g.hue3)} heart. It ${opensWords(g)}.`;
 }
 
 let profileId = null;
@@ -1028,17 +1016,13 @@ function renderProfile(s) {
 }
 
 function skyEntry(s) {
-  const sky = skyAt(s.state.time), al = almanac(s.state.time);
-  const inNights = (n) => (n < 0.6 ? 'tonight' : n < 1.5 ? 'tomorrow night' : `in ${Math.round(n)} nights`);
-  const turn = al.turn == null ? 'It will not be in the sky tonight or tomorrow.' : sky.up ? `It sets in ${span(al.turn)}.` : `It rises in ${span(al.turn)}.`;
+  const sky = skyAt(s.state.time);
+  const eclipsed = sky.eclipse > 0.3 && sky.up;
   return back + `<svg class="bigmoon" viewBox="-12 -12 24 24">${moonSvg(sky.phase, { rust: sky.eclipse > 0.3 }).replace(/^<svg[^>]*>|<\/svg>$/g, '')}</svg>` +
     `<h2 style="--c:#dfe7ff">The moon</h2>` +
-    `<div class="muted">night ${sky.night + 1} of the garden · ${esc(phaseName(sky.phase))} · ${Math.round(sky.lit * 100)}% lit</div>` +
-    `<p>${sky.eclipse > 0.3 && sky.up ? 'The full moon is in eclipse: a rust-red shadow lies across it. ' : ''}${cap(moonWhere(sky))}${sky.up && sky.cover > 0.5 ? ', behind cloud' : ''}. ${turn}</p>` +
-    `<p class="muted">Full moon ${inNights(al.toFull)}; no moon ${inNights(al.toNew)}. Moonlight in the garden is ${lightWord(sky.light)}; the sky is ${weather(sky)}${sky.halo ? ', with a ring around the moon' : ''}.</p>` +
-    bars([['this night', sky.u], ['moonlight', sky.light], ['cloud', sky.cloudiness]]) +
-    `<p>The moon goes from new to new in ${LUNATION} nights of ten minutes each, and keeps the real one's habits: a young moon is a thin curve already sinking at dusk, a full one crosses the whole night, an old one rises just before the pale, and for a night or so there is none. Its bright side faces where the pale went down.</p>` +
-    `<p class="muted">No firefly lives longer than a single night, so none of them ever sees this. Each sees one shape, in one part of the sky, and has to make sense of what the others say they saw.</p>`;
+    `<div class="muted">${eclipsed ? 'in eclipse' : esc(phaseName(sky.phase))} · ${esc(moonWhere(sky))}${sky.up && sky.cover > 0.5 ? ', behind cloud' : ''}</div>` +
+    `<div class="muted">night ${sky.night + 1} · ${weather(sky)}${sky.halo && sky.up ? ' · ringed' : ''}</div>` +
+    bars([['this night', sky.u], ['moonlight', sky.light]]);
 }
 
 function spiralEntry(s) {
@@ -1050,16 +1034,12 @@ function spiralEntry(s) {
     return `<b>${i}</b><span class="${e.open ? '' : 'shut'}" data-entry="${e.id}" style="cursor:pointer"><i style="background:${flowerColor(e.genome)};color:${flowerColor(e.genome)}"></i>${esc(cap(e.name))} <span class="muted">· ${e.state === 'growing' ? 'sprouting' : e.open ? 'open' : 'shut'}</span></span>`;
   }).join('');
   const tenders = Object.entries(sp.tenders ?? {}).sort((a, b) => b[1] - a[1]).map(([name, n]) => `${esc(name)} (${n})`).join(', ');
-  const sown = sp.plots.filter((v) => v != null).length;
-  const last = sp.last;
   return back + `<h2 style="--c:#f2ecc0">The ${ordinal(sp.number)} spiral</h2>` +
-    `<div class="muted">${spiralProgress(s)}${sp.past ? ` · ${sp.past} flowered before it` : ''}</div>` +
-    `<p>A bed of nineteen plots, winding out from its heart to the front of the garden. Fireflies carry seeds to it from the plants growing wild, pull up what doesn't belong, and wake shut flowers with their own light. When every plot stands open at the same moment the whole spiral flowers and pours its light upward; then it goes to seed, and they begin again.</p>` +
-    bars([['sown', sown / SPIRAL.plots]]) +
-    (sp.note ? `<p class="muted">${esc(cap(sp.note))}</p>` : '') +
-    `<div class="sec">Its plots</div><div class="plots">${rows}</div>` +
-    (tenders ? `<div class="sec">Sown by</div><p>${tenders}</p>` : '<p class="muted">No firefly has sown a seed here yet.</p>') +
-    (last ? `<div class="sec">The last Flowering</div><p class="muted">The ${ordinal(last.number)} spiral flowered under ${esc(last.moon?.words ?? 'an unknown sky')}: ${[...new Set(last.flowers.map((f) => f.name))].slice(0, 6).map(esc).join(', ')}${new Set(last.flowers.map((f) => f.name)).size > 6 ? ' and more' : ''}.</p>` : '');
+    `<div class="muted">${spiralProgress(s)}</div>` +
+    bars([['sown', sp.plots.filter((v) => v != null).length / SPIRAL.plots]]) +
+    `<div class="plots">${rows}</div>` +
+    (tenders ? `<div class="sec">Sown by</div><p>${tenders}</p>` : '') +
+    (sp.last ? `<p class="muted">The ${ordinal(sp.last.number)} flowered under ${esc(sp.last.moon?.words ?? 'an unknown sky')}.</p>` : '');
 }
 
 function plantEntry(s, e) {
@@ -1067,42 +1047,39 @@ function plantEntry(s, e) {
   if (!g) return `${back}<div class="empty">…</div>`;
   const alive = s.ents.has(e.id);
   const life = e.plot != null ? null : 1 - Math.max((e.age - g.growTime) / g.lifespan, 0);
+  const from = e.parents?.length === 2 ? `A cross of ${esc(e.parents[0])} and ${esc(e.parents[1])}` : e.parents?.length === 1 ? `From a seed of ${esc(e.parents[0])}` : 'Blew in over the wall';
   return back + `<div class="swatches"><i style="background:${leafColor(g)};color:${leafColor(g)}"></i><i style="background:${flowerColor(g)};color:${flowerColor(g)}"></i><i style="background:${hex(hsl(g.hue3, g.sat, 0.75))};color:${hex(hsl(g.hue3, g.sat, 0.75))}"></i></div>` +
     `<h2 style="--c:${flowerColor(g)}">${esc(cap(e.name ?? speciesName(g)))}</h2>` +
-    `<div class="muted">generation ${e.gen} · ${span(e.age)} old · ${alive ? plantState(e) : 'gone back into the soil'}${e.plot != null ? ` · plot ${e.plot} of the spiral` : ''}</div>` +
+    `<div class="muted">${alive ? plantState(e) : 'gone'}${e.plot != null ? ` · plot ${e.plot} of the spiral` : ''}</div>` +
     `<p>${esc(describePlant(g))}</p>` +
-    (g.nectar ? `<p class="muted">Holds up to ${g.nectar} sip${g.nectar > 1 ? 's' : ''} of nectar while open. ${e.given ? `Fireflies have drunk from it ${e.given} time${e.given > 1 ? 's' : ''}.` : 'No firefly has drunk from it yet.'}${e.hybrid ? ' A firefly has brought it another flower\'s pollen: its seeds will be hybrids.' : ''}</p>` : '') +
     (alive ? bars([['grown', e.growth], ...(g.nectar ? [['nectar', e.nectar / g.nectar]] : []), ...(life != null ? [['life left', ['withering', 'dead'].includes(e.state) ? 0 : life]] : [])]) : '') +
-    (e.plot != null ? '<p class="muted">Sown in the spiral by a firefly. It will wait there, opening and shutting with the moon, until the Flowering.</p>' : '') +
-    `<p class="muted">${e.parents?.length === 2 ? `A hybrid of the ${esc(e.parents[0])} and the ${esc(e.parents[1])}: a firefly carried pollen from one to the other.`
-      : e.parents?.length === 1 ? `It grew from a seed of the ${esc(e.parents[0])}, a little different from it.`
-      : 'It grew from a seed that blew in over the wall.'}${e.gen > 1 ? ` Its line goes back ${e.gen - 1} generation${e.gen > 2 ? 's' : ''}.` : ''}</p>`;
+    `<p class="muted">${from}.</p>`;
 }
+
+// Sections of an entry that start folded away; which ones the reader has opened.
+const unfolded = new Set();
+panes.profile.addEventListener('toggle', (ev) => {
+  const k = ev.target.dataset?.fold;
+  if (k) unfolded[ev.target.open ? 'add' : 'delete'](k);
+}, true);
+const fold = (key, title, html) => `<details data-fold="${key}"${unfolded.has(key) ? ' open' : ''}><summary>${title}</summary>${html}</details>`;
 
 function flyEntry(s, e) {
   const live = s.ents.has(e.id);
   const p = e.persona ?? {};
-  const doing = !live ? 'rose out of the garden' : e.doing ? `${e.doing}${e.plan?.length ? `, then ${e.plan.join(', then ')}` : ''}` : e.brain === 'thinking' ? 'pausing to think' : 'hovering';
-  const reasoning = live && e.reasoning ? `<div class="muted">${e.brain === 'thinking' ? 'Thinking it through…' : 'How it decided'}</div><p class="reasoning">${esc(e.reasoning.trim().replace(/\s+/g, ' ').slice(-400))}</p>` : '';
-  const ago = (at) => `<span class="muted">${span(s.state.time - at)} ago</span>`;
+  const doing = e.doing ?? (e.brain === 'thinking' ? 'thinking' : 'sitting');
   const carried = e.myths?.length ? `<div class="sec">Myths it carries</div><ul class="carried">${e.myths.map((t) => `<li data-myth="${t.id}" style="cursor:pointer">${esc(t.text)} <span>${t.mine ? 'its own' : t.stance === 'embraces' ? 'embraced' : t.stance === 'disputes' ? 'disputed' : ''}</span></li>`).join('')}</ul>` : '';
-  const seen = live && e.witnessed?.length ? `<div class="sec">Has seen in the sky</div><ul>${e.witnessed.slice().reverse().map((w) => `<li>${esc(cap(w.text))} ${ago(w.at)}</li>`).join('')}</ul>` : '';
-  const notes = live && e.notes?.length ? `<div class="sec">Keeps in mind</div><ul>${e.notes.slice().reverse().map((n) => `<li>${esc(n.text)} ${ago(n.at)}</li>`).join('')}</ul>` : '';
-  const memory = live && e.memory?.length ? `<div class="sec">Log</div><ul>${e.memory.slice().reverse().map((m) => `<li>${esc(m.text)} ${ago(m.at)}</li>`).join('')}</ul>` : '';
+  const seen = live && e.witnessed?.length ? `<div class="sec">Has seen</div><ul class="seen">${e.witnessed.slice(-3).reverse().map((w) => `<li>${esc(cap(w.text))}</li>`).join('')}</ul>` : '';
+  const soil = (e.origins ?? p.memories)?.length ? fold('soil', 'From under the soil', `<ul>${(e.origins ?? p.memories).map((m) => `<li>${esc(m)}</li>`).join('')}</ul>`) : '';
   const a = e.article;
-  const source = a ? `<div class="muted">kindled from ${a.url ? `<a href="${esc(a.url)}" target="_blank" rel="noopener" style="color:inherit">${esc(a.title)}</a>` : `the poem “${esc(a.title)}”${a.by ? ` by ${esc(a.by)}` : ''}`}</div>` : '';
+  const source = a ? `<div class="muted">kindled from ${a.url ? `<a href="${esc(a.url)}" target="_blank" rel="noopener" style="color:inherit">${esc(a.title)}</a>` : `“${esc(a.title)}”${a.by ? `, ${esc(a.by)}` : ''}`}</div>` : '';
   return back + lamp(e, 'big') +
     `<h2 style="--c:${esc(e.glow ?? '#dff27a')}">${esc(e.name)}</h2>` +
-    `<div class="muted">generation ${e.gen}${e.predecessorName ? `, followed ${esc(e.predecessorName)}` : ''} · ${esc(p.temperament ?? '')}${live ? ` · feels ${esc(e.emotion)}` : ''}</div>` + source +
+    `<div class="muted">generation ${e.gen} · ${live ? esc(e.emotion) : 'risen'}${live && e.seenMoon === false ? ' · has not seen the moon' : ''}</div>` + source +
     (p.hunch ? `<p class="phil">${esc(p.hunch)}</p>` : '') +
-    `<p>${esc(p.personality)}</p>` + (p.desire ? `<p class="muted">Wants: ${esc(p.desire)}</p>` : '') +
-    (live && e.seenMoon === false ? '<p class="muted">Has never seen the moon with its own eyes.</p>' : '') +
-    (live ? `<p class="quote">“${esc(e.thought)}”</p>${reasoning}<p><b>Doing:</b> ${esc(doing)}</p>` +
-      bars([['nectar', e.needs.nectar], ['rest', e.needs.rest], ['company', e.needs.company], ['wonder', e.needs.wonder], ['night left', 1 - e.age / e.lifespan]])
-      : '<p class="muted">Rose out of the garden.</p>') +
-    seen + carried + notes + memory +
-    // What it remembers of its time under the soil: the oldest things it knows, so they come last.
-    ((e.origins ?? p.memories)?.length ? `<div class="sec">From under the soil</div><ul>${(e.origins ?? p.memories).map((m) => `<li>${esc(m)}</li>`).join('')}</ul>` : '');
+    (live ? `<p class="quote">“${esc(e.thought)}”</p><div class="muted">${esc(doing)}</div>` +
+      bars([['nectar', e.needs.nectar], ['rest', e.needs.rest], ['company', e.needs.company], ['wonder', e.needs.wonder], ['night left', 1 - e.age / e.lifespan]]) : '') +
+    seen + carried + soil;
 }
 
 // The subtitle is a clock of garden time since the first dusk, ticking smoothly between snapshots,

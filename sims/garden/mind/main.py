@@ -150,7 +150,7 @@ Feeling = Literal["curious", "happy", "content", "playful", "lonely", "uneasy", 
 
 class Say(BaseModel):
     to: str | None = Field(None, description="name of the firefly you speak to, or null to speak to everyone in earshot")
-    text: str = Field(description="what you say out loud: 1 to 3 sentences, unmistakably in your own voice (you.voice)")
+    text: str = Field(description="what you say out loud: one or two short sentences, 30 words at most, unmistakably in your own voice (you.voice)")
 
 
 class Impression(BaseModel):
@@ -167,7 +167,7 @@ Theme = Literal[
 class Myth(BaseModel):
     text: str = Field(
         description="the myth itself: a small story or bold claim that explains something about the moon or the night, with a cause "
-        "in it (who or what did it, and why), built on something you witnessed or remember, told in your own voice. One to three sentences"
+        "in it (who or what did it, and why), built on something you witnessed or remember, told in your own voice. One or two sentences, 40 words at most"
     )
     theme: Theme = Field(description="the question it answers")
     refines_id: int | None = Field(None, description="id of a myth you carry that this reworks, corrects or answers, or null if it is new")
@@ -266,7 +266,7 @@ it, a trap to catch it out? The spiral only gets tended if you tend it: whenever
 and a plot stands empty, or a flower stands out of place, that is worth a trip, and a good thing to \
 do between conversations.
 - Every firefly within 280 pixels hears what you say, and when you speak to someone the two of you \
-hover face to face. Say at most 3 sentences per turn, in your own voice. Only one firefly speaks at \
+settle near each other. Keep it short: one or two sentences, 30 words at most, in your own voice. Only one firefly speaks at \
 a time, so what you say may wait a moment for its turn (waiting_to_say shows it); don't repeat it.
 - Don't hang in a cluster. Between conversations, go off on your own: drink, tend the spiral, watch \
 the sky, rest, think alone, then seek someone out again. Your voice carries 280 pixels, so you can \
@@ -297,9 +297,11 @@ what, a question still open, something you mean to ask or do), not every turn.
 Myths:
 - When the sky or a conversation brings you to an explanation, put it in new_myth: a story or claim \
 with a cause, in your own voice and images, not a vague saying. If it reworks, corrects or answers \
-a myth you carry, give that myth's id as refines_id: that is how the garden's stories grow. Don't \
-make one every turn; a few good ones in a life are plenty, and one that answers a question no myth \
-has touched is worth more than another turn of one already told many times.
+a myth you carry, give that myth's id as refines_id: that is how the garden's stories grow. Myths \
+are rare. Most of what is said in the garden is only talk; a firefly makes one or two myths in its \
+life, and the garden takes in only one every few minutes (you.myths_right_now says when to wait: a \
+new_myth sent then is lost). Keep each to a sentence or two. One that answers a question no myth has \
+touched is worth more than another turn of one already told many times.
 - If you speak in the same turn, everyone who hears you learns the new myth. To pass on one you \
 already carry, give its share_myth_id while you speak.
 - Take a stance on the myths you carry once you've made up your mind: embrace or dispute them. \
@@ -330,7 +332,7 @@ class Persona(BaseModel):
     hunch: str = Field(
         min_length=30,
         description="its own first guess at what the moon is and what it is doing up there, grown out of the text's subject "
-        "and stated plainly, as a firefly who has not yet looked at the sky would hold it. One sentence",
+        "and stated plainly, as a firefly who has not yet looked at the sky would hold it. One short sentence, 18 words at most",
     )
     images: list[str] = Field(
         min_length=3,

@@ -74,7 +74,11 @@
     .kin:hover { background: #0e1429; }
     .kin .name { font-weight: 500; }
     .kin .meta { color: var(--muted); font-size: 11.5px; }
-    .kin .phil { font: italic 12.5px/1.4 Fraunces, Georgia, serif; color: var(--soft); }
+    .kin .phil { font: italic 12.5px/1.4 Fraunces, Georgia, serif; color: var(--soft); display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
+    .names { display: flex; flex-wrap: wrap; gap: 3px 12px; padding: 2px 6px; font-size: 12.5px; }
+    .names span { cursor: pointer; opacity: 0.75; }
+    .names span:hover { opacity: 1; }
+    .names i { color: var(--muted); font-style: normal; }
     .kin .swatch { width: 44px; height: 34px; flex: none; display: flex; align-items: center; justify-content: center; }
     .kin .swatch i { width: 14px; height: 14px; border-radius: 50%; margin: 0 -2px; box-shadow: 0 0 10px currentColor; }
     .kin .swatch svg { width: 26px; height: 26px; filter: drop-shadow(0 0 6px #dfe7ff66); }
@@ -114,7 +118,13 @@
     #profile .bar i { display: block; height: 100%; background: var(--c, var(--accent)); border-radius: 2px; }
     #profile ul { margin: 2px 0 0; padding-left: 16px; }
     #profile li { margin: 2px 0; }
-    #profile .carried li { font-family: Fraunces, Georgia, serif; color: var(--paper); }
+    #profile .carried li { font-family: Fraunces, Georgia, serif; color: var(--paper); margin: 6px 0; }
+    #profile .seen { list-style: none; padding-left: 0; }
+    #profile .seen li, #profile .quote { display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
+    #profile .seen li { margin: 5px 0; color: var(--soft); }
+    #profile .quote { -webkit-line-clamp: 3; }
+    #profile details { margin-top: 14px; color: var(--soft); }
+    #profile summary { cursor: pointer; color: var(--muted); font-size: 11px; text-transform: uppercase; letter-spacing: 0.08em; }
     #profile .carried li span { font-family: Inter, sans-serif; font-size: 11px; color: var(--muted); }
 
     /* The book */
@@ -137,6 +147,9 @@
     #book .measure { position: fixed; left: -9999px; top: 0; width: calc((min(1180px, 86vw) - 28px) / 2); height: min(780px, 88vh); padding: 50px 54px 56px; visibility: hidden; }
     #book .close { position: absolute; top: -14px; right: -14px; width: 34px; height: 34px; border-radius: 50%; border: 1px solid #5560a0;
       background: #151a38; color: #dfe4f6; font: 20px/1 serif; cursor: pointer; z-index: 2; }
+    #book .toc { position: absolute; top: -14px; left: -14px; height: 34px; padding: 0 14px; border-radius: 17px; border: 1px solid #5560a0;
+      background: #151a38; color: #dfe4f6; font: 15px/1 'IM Fell English', serif; cursor: pointer; z-index: 2; }
+    #book .toc:hover, #book .close:hover { background: #20275a; }
     #book .turn { width: 44px; height: 88px; border: 0; background: none; color: #c3cbf2; font: 56px/1 'IM Fell English', serif; cursor: pointer; opacity: 0.8; }
     #book .turn:hover:not(:disabled) { opacity: 1; text-shadow: 0 0 14px #c3cbf2; }
     #book .turn:disabled { opacity: 0.15; cursor: default; }
@@ -145,9 +158,7 @@
     #book .entry p { margin: 0 0 4px; font: 17px/1.5 'IM Fell English', Georgia, serif; color: #2b1d10; }
     #book .entry.first p::first-letter { float: left; font: 54px/0.9 'IM Fell English', serif; margin: 4px 8px 0 0; color: #3a3f7a; }
     #book .entry .sig { text-align: right; font: italic 14px 'IM Fell English', serif; color: #6a5036; }
-    #book .entry .sig svg { width: 13px; height: 13px; margin-left: 5px; vertical-align: -2px; }
-    #book .entry .margin { margin: 4px 0 2px; padding-left: 10px; border-left: 1px solid #b89a6c; font: italic 13px/1.4 'IM Fell English', serif; color: #7b5d3c; }
-    #book .entry .note { font: 12px/1.4 'IM Fell English', serif; color: #8c7656; }
+    #book .entry .sig svg { width: 13px; height: 13px; margin-left: 6px; vertical-align: -2px; }
     #book .entry.faded p, #book .entry.faded .sig { color: #8a7660; }
     #book .entry.lit { animation: lit 2.4s ease-out; }
     @keyframes lit { from { background: #f6d58a; box-shadow: 0 0 0 8px #f6d58a; } }

@@ -39,9 +39,11 @@ const KEEP_FLOWERS = 3;       // plots of a spent spiral that sprout again from 
 const SPIRALS_KEPT = 40;      // finished spirals remembered after they've gone to seed
 const NAMES_KEPT = 60;        // names of the latest fireflies, which newcomers are kept from repeating
 const CARRY = 8;              // myths one firefly can carry in mind at once
-const COMPOSE_GAP = 75;       // s between new myths from one firefly, so ideas get time to be talked over
+const COMPOSE_GAP = 150;      // s between new myths from one firefly, so ideas get time to be talked over
+const MYTH_GAP = 180;         // s between new myths in the whole garden: the book fills slowly
+const MYTH_MAX = 260;         // chars in a myth
 const INHERIT = 4;            // myths a newcomer arrives with, from the firefly it follows
-const ARCHIVE = 2000;         // myths the book keeps in all (the least regarded forgotten ones go first)
+const ARCHIVE = 84;           // myths the book holds: past that, the least regarded that nobody carries are forgotten
 const MEMORY = 40;            // remembered events per firefly
 const HEARD = 30;             // remembered lines of conversation per firefly
 const CONVERSATION = 14;      // of those, the most recent ones a firefly is reminded of each turn
@@ -53,7 +55,7 @@ const THINK_GAP = 1.5;        // s between finishing a plan and asking for the n
 const FAIL_GAP = 4;           // s to pause after an action fails
 const PLAN_MAX = 4;           // actions per plan
 const REASONING_KEEP = 4000;  // chars of streamed reasoning kept per firefly
-const SPEECH_MAX = 450;       // chars per spoken turn (under a paragraph)
+const SPEECH_MAX = 220;       // chars per spoken turn: a sentence or two
 const SPEECH_STALE = 45;      // s a line can wait for the floor before it's no longer worth saying
 const STAR_GAP = [70, 240];   // s between falling stars on a clear night
 const EDGE = 56;              // px fireflies keep from the side walls
@@ -683,10 +685,10 @@ function saidBefore(f, text) {
 }
 
 // Over-long turns are cut at the last sentence that fits.
-function trimSpeech(text) {
+function trimSpeech(text, max = SPEECH_MAX) {
   text = String(text).replace(/\s+/g, ' ').trim();
-  if (text.length <= SPEECH_MAX) return text;
-  const cut = text.slice(0, SPEECH_MAX);
+  if (text.length <= max) return text;
+  const cut = text.slice(0, max);
   const end = Math.max(cut.lastIndexOf('. '), cut.lastIndexOf('! '), cut.lastIndexOf('? '));
   return end > 80 ? cut.slice(0, end + 1) : cut.replace(/\s+\S*$/, '') + '…';
 }
@@ -768,9 +770,9 @@ function learn(world, f, loreId, from) {
 }
 
 function compose(world, f, raw) {
-  const text = String(raw.text ?? '').replace(/\s+/g, ' ').trim().slice(0, 420);
-  if (!text || world.time - (f.composedAt ?? -1e9) < COMPOSE_GAP) return null;
-  f.composedAt = world.time;
+  const text = trimSpeech(raw.text ?? '', MYTH_MAX);
+  if (!text || world.time - (f.composedAt ?? -1e9) < COMPOSE_GAP || world.time - (world.mythAt ?? -1e9) < MYTH_GAP) return null;
+  f.composedAt = world.mythAt = world.time;
   const parent = world.lore.get(Number(raw.refines_id));
   const lore = {
     id: world.nextLoreId++, text, theme: THEMES.includes(raw.theme) ? raw.theme : 'what the moon is',
@@ -1289,6 +1291,7 @@ function perceive(world, f) {
       generation: f.gen, personality: f.persona.personality, desire: f.persona.desire, your_hunch_about_the_moon: f.persona.hunch,
       ...(f.persona.images?.length ? { images: f.persona.images } : {}),
       ...(glimmers(f).length ? { memories_from_under_the_soil: glimmers(f) } : {}),
+      ...(world.time - (world.mythAt ?? -1e9) < MYTH_GAP ? { myths_right_now: 'a new myth was made in the garden not long ago; let it be talked over before anyone makes another (a new_myth now would be lost)' } : {}),
       ...(f.composedAt != null ? { last_made_a_myth: `${ago(f.composedAt)}${world.time - f.composedAt < COMPOSE_GAP ? ' (too soon for another; talk it over first)' : ''}` } : {}),
       life_stage: stage(world, f), x: Math.round(f.x), y: Math.round(f.y),
       needs: Object.fromEntries(Object.entries(f.needs).map(([k, v]) => [k, r2(v)])), feeling: f.emotion,
@@ -1575,7 +1578,7 @@ export function snapshot(world) {
 export function serialize(world) {
   return JSON.stringify({
     version: 1, time: world.time, nextId: world.nextId, nextLoreId: world.nextLoreId, arrivals: world.arrivals, entities: world.entities,
-    spiral: world.spiral, spirals: world.spirals, lastDrift: world.lastDrift, nextStar: world.nextStar, names: world.names,
+    spiral: world.spiral, spirals: world.spirals, lastDrift: world.lastDrift, nextStar: world.nextStar, names: world.names, mythAt: world.mythAt ?? null,
   });
 }
 
@@ -1586,7 +1589,7 @@ export function restore(store, json, lore) {
   Object.assign(world, {
     time: data.time, nextId: data.nextId, nextLoreId: data.nextLoreId, arrivals: data.arrivals, entities: data.entities,
     spiral: data.spiral, spirals: data.spirals ?? [], lastDrift: data.lastDrift ?? data.time, nextStar: data.nextStar ?? data.time + 60,
-    names: data.names ?? [],
+    names: data.names ?? [], mythAt: data.mythAt ?? null,
   });
   for (const l of lore) world.lore.set(l.id, l);
   for (const l of lore) world.nextLoreId = Math.max(world.nextLoreId, l.id + 1);

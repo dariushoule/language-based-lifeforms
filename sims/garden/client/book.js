@@ -1,7 +1,7 @@
 // The Book of the Moon: a title page, contents, and one chapter per question the fireflies ask,
-// laid out on facing pages that turn. Myths within a chapter run in the order they were set down,
-// so a reader can watch a story get reworked from one generation to the next; each is signed with
-// the moon it was set down under.
+// laid out on facing pages that turn. Myths within a chapter run in the order they were made; each
+// is a few lines and a signature: who told it, whose telling it reworks, and the moon it was told
+// under. The book opens at the front every time, and Contents is always one click away.
 import { moonSvg } from './moon.js';
 
 const CHAPTERS = {
@@ -10,16 +10,14 @@ const CHAPTERS = {
   'the dark': 'Of the Dark', 'the pale': 'Of the Pale', 'the soil': 'Of the Soil', 'the rising': 'Of the Rising',
 };
 const THEMES = Object.keys(CHAPTERS);
-const ORDINAL = ['first', 'second', 'third', 'fourth', 'fifth', 'sixth', 'seventh', 'eighth', 'ninth', 'tenth', 'eleventh', 'twelfth'];
 const esc = (s) => String(s ?? '').replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' })[c]);
-const generation = (g) => (g <= ORDINAL.length ? `of the ${ORDINAL[g - 1]} generation` : `of generation ${g}`);
-const list = (names) => (names.length < 2 ? names.join('') : `${names.slice(0, -1).join(', ')} and ${names.at(-1)}`);
 const ORN = `<div class="orn">${moonSvg(0.14, { ink: true })}</div>`;
 
 export function createBook(root) {
   root.innerHTML = `
     <div class="tome">
       <button class="close" aria-label="Close the book">×</button>
+      <button class="toc" aria-label="Go to the contents">Contents</button>
       <div class="page left"><div class="running"></div><div class="body"></div><div class="folio"></div></div>
       <div class="page right"><div class="running"></div><div class="body"></div><div class="folio"></div></div>
     </div>
@@ -37,24 +35,13 @@ export function createBook(root) {
 
   function blocks() {
     const ts = data.teachings;
-    const byId = new Map(ts.map((t) => [t.id, t]));
     const chapters = THEMES.filter((th) => ts.some((t) => t.theme === th));
     const entry = (t, first) => {
-      const parent = t.refines && byId.get(t.refines);
-      // Where a myth grew from an older one, the margin credits it the way books credit a source.
-      const source = t.refinesBy === t.by ? 'After an earlier telling of its own:' : `After ${esc(t.refinesBy)}, who told it so:`;
-      const margin = t.refinesText
-        ? `<div class="margin">${source} “${esc(t.refinesText)}”${parent && parent.theme !== t.theme ? ` (see <i>${esc(CHAPTERS[parent.theme])}</i>)` : ''}</div>` : '';
-      const holders = t.carriers.filter((c) => c.stance !== 'disputes').map((c) => c.name);
-      const doubters = t.carriers.filter((c) => c.stance === 'disputes').map((c) => c.name);
-      const notes = [
-        holders.length ? `Carried now by ${esc(list(holders))}.` : '',
-        doubters.length ? `Disputed by ${esc(list(doubters))}.` : '',
-      ].filter(Boolean).join(' ');
-      // The moon it was set down under, and whether its teller ever saw the moon at all.
-      const moon = t.moon ? `, under ${esc(t.moon.words)}${moonSvg(t.moon.phase, { ink: true, absent: !t.moon.up })}` : '';
-      return `<div class="entry${holders.length ? '' : ' faded'}${first ? ' first' : ''}" data-id="${t.id}">` +
-        `<p>${esc(t.text)}</p><div class="sig">— ${esc(t.by)}, ${generation(t.gen)}${t.sawMoon === false ? ', who never saw it' : ''}${moon}</div>${margin}<div class="note">${notes}</div></div>`;
+      const carried = t.carriers.some((c) => c.stance !== 'disputes');
+      const after = t.refinesBy && t.refinesBy !== t.by ? `, after ${esc(t.refinesBy)}` : '';
+      const moon = t.moon ? `<span title="under ${esc(t.moon.words)}">${moonSvg(t.moon.phase, { ink: true, absent: !t.moon.up })}</span>` : '';
+      return `<div class="entry${carried ? '' : ' faded'}${first ? ' first' : ''}" data-id="${t.id}">` +
+        `<p>${esc(t.text)}</p><div class="sig">— ${esc(t.by)}${t.sawMoon === false ? ', who never saw it' : ''}${after}${moon}</div></div>`;
     };
     const out = [];
     for (const th of chapters) {
@@ -87,11 +74,9 @@ export function createBook(root) {
     const starts = new Map();
     body.forEach((p, i) => { if (!starts.has(p.chapter)) starts.set(p.chapter, front + i); });
     const best = data.teachings.slice().sort((a, b) => b.standing - a.standing)[0];
-    const flies = data.authors, gens = data.generations;
     pages = [
-      { html: best ? `<div class="endpaper"><p>“${esc(best.text)}”</p><div class="sig">— ${esc(best.by)}, ${generation(best.gen)}</div></div>` : '<div class="endpaper"></div>' },
-      { html: `<div class="titlepage"><div class="small">being the</div><h1>Book of<br>the Moon</h1>${ORN}` +
-        `<div class="small">${data.total ? `the myths of ${flies} firefl${flies === 1 ? 'y' : 'ies'}, told over ${gens} generation${gens === 1 ? '' : 's'} in a walled garden, none of whom lived to see the moon go round, and kept here though their lights are out` : 'in which nothing has yet been set down'}</div></div>` },
+      { html: best ? `<div class="endpaper"><p>“${esc(best.text)}”</p><div class="sig">— ${esc(best.by)}</div></div>` : '<div class="endpaper"></div>' },
+      { html: `<div class="titlepage"><div class="small">being the</div><h1>Book of<br>the Moon</h1>${ORN}</div>` },
       { html: `<h3 class="contents-head">Contents</h3><ol class="contents">${chapters.map((th) => `<li data-goto="${starts.get(th)}"><span>${esc(CHAPTERS[th])}</span><i></i><b>${starts.get(th) + 1}</b></li>`).join('')}</ol>`, running: 'Contents' },
       ...body.map((p) => ({ ...p, running: CHAPTERS[p.chapter] })),
     ];
@@ -140,6 +125,7 @@ export function createBook(root) {
   root.querySelector('.prev').onclick = () => turn(-1);
   root.querySelector('.next').onclick = () => turn(1);
   root.querySelector('.close').onclick = () => api.close();
+  root.querySelector('.toc').onclick = () => goToPage(2);
   root.addEventListener('click', (ev) => {
     if (ev.target === root) return api.close();
     const go = ev.target.closest('[data-goto]');
@@ -150,6 +136,8 @@ export function createBook(root) {
     if (ev.key === 'Escape') api.close();
     else if (ev.key === 'ArrowRight' || ev.key === 'PageDown') turn(1);
     else if (ev.key === 'ArrowLeft' || ev.key === 'PageUp') turn(-1);
+    else if (ev.key === 'Home') goToPage(0);
+    else if (ev.key === 'End') goToPage(pages.length - 1);
   });
   addEventListener('resize', () => { dirty = true; if (api.isOpen) render(); });
 
@@ -160,6 +148,8 @@ export function createBook(root) {
       root.classList.add('open');
       api.isOpen = true;
       if (dirty) typeset();
+      // At the front, unless it was opened to a particular myth.
+      spread = 0;
       if (mythId != null) {
         const i = pages.findIndex((p) => p.ids?.includes(mythId));
         if (i >= 0) spread = Math.floor(i / perSpread());
