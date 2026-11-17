@@ -55,6 +55,7 @@ const REASONING_KEEP = 4000;  // chars of streamed reasoning kept per firefly
 const SPEECH_MAX = 450;       // chars per spoken turn (under a paragraph)
 const SPEECH_STALE = 45;      // s a line can wait for the floor before it's no longer worth saying
 const STAR_GAP = [70, 240];   // s between falling stars on a clear night
+const EDGE = 56;              // px fireflies keep from the side walls
 
 const ACTIONS = ['fly_to', 'visit', 'follow', 'sip', 'rest', 'wander', 'watch_sky', 'touch_pond', 'sow', 'uproot', 'wake'];
 const FEELINGS = ['curious', 'happy', 'content', 'playful', 'lonely', 'uneasy', 'afraid', 'doubtful', 'sleepy', 'thirsty', 'grieving', 'awed'];
@@ -812,7 +813,7 @@ function steer(f, tx, ty, dt, speed, stopAt = 8) {
 function converse(world, f, o, dt) {
   const side = Math.sign(f.x - o.x) || (f.id < o.id ? -1 : 1);
   const mx = (f.x + o.x) / 2, my = (f.y + o.y) / 2;
-  steer(f, clamp(mx + side * 24, 30, WORLD.width - 30), clamp(my, WORLD.ceiling + 30, groundAt() - 30), dt, maxSpeed(f) * 0.7, 5);
+  steer(f, clamp(mx + side * 24, EDGE, WORLD.width - EDGE), clamp(my, WORLD.ceiling + 30, groundAt() - 30), dt, maxSpeed(f) * 0.7, 5);
 }
 
 function physics(world, f, dt, sky) {
@@ -829,7 +830,8 @@ function physics(world, f, dt, sky) {
   f.y += f.vy * dt;
   if (!f.steering) { f.vx *= 1 - Math.min(1, dt * 1.5); f.vy *= 1 - Math.min(1, dt * 1.5); }
   if (f.entering && ageOf(world, f) > 4) f.entering = false;
-  f.x = clamp(f.x, 14, WORLD.width - 14);
+  // Kept well in from the side walls: observers' windows trim a strip off each side of the garden.
+  f.x = clamp(f.x, EDGE, WORLD.width - EDGE);
   if (!f.leaving) f.y = clamp(f.y, WORLD.ceiling, groundAt());
   const partner = f.talk && byId(world, f.talk.with, 'firefly');
   if (partner && f.talking) f.facing = Math.sign(partner.x - f.x) || f.facing;
@@ -1076,7 +1078,7 @@ function watched(world, f, from, to, secs) {
 function openAir(world, f) {
   let best = null, bestRoom = -1;
   for (let i = 0; i < 6; i++) {
-    const p = { x: clamp(f.x + rand(-340, 340), 40, WORLD.width - 40), y: rand(WORLD.wallTop + 30, groundAt() - 30) };
+    const p = { x: clamp(f.x + rand(-340, 340), EDGE + 20, WORLD.width - EDGE - 20), y: rand(WORLD.wallTop + 30, groundAt() - 30) };
     const room = Math.min(...flies(world).filter((o) => o !== f).map((o) => dist(o, p)), 1e9);
     if (room > bestRoom) { best = p; bestRoom = room; }
   }
