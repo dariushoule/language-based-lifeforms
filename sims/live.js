@@ -22,7 +22,7 @@
 import path from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 
-export const LIVE = { sim: 'aquarium', paused: true };
+export const LIVE = { sim: 'garden', paused: false };
 
 try { process.loadEnvFile('.env'); } catch {}
 const env = (k) => process.env[k]?.trim() || null;

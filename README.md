@@ -1,6 +1,11 @@
 # Language Based Lifeforms
 
-A persistent aquarium of alien, bioluminescent fish ("LBLs") who live a few minutes each and spend them talking, arguing and putting what they learn into words. Every fish's personality, voice and memories grow out of a random Wikipedia article. Across generations their teachings accumulate into the **Compendium**, a book of fish philosophy that keeps evolving as newcomers rework, embrace and dispute what came before. The server runs the tank authoritatively and streams it over websocket; any number of observers watch in the browser (Phaser), read the conversation as it happens, and open the Compendium.
+Small persistent worlds of creatures ("LBLs") who live a few minutes each and spend them talking, arguing and putting what they learn into words. Every creature's personality, voice and memories grow out of a random Wikipedia article (or, now and then, a poem), and what they work out is handed down the generations in a book that keeps evolving as newcomers rework, embrace and dispute what came before. The server runs the world authoritatively and streams it over websocket; any number of observers watch in the browser (Phaser), read the conversation as it happens, and open the book.
+
+There are two so far:
+
+- **The night garden** (`sims/garden/`): fireflies in a walled garden, each alive for one night or less, trying to work out what the moon is. It changes shape from night to night and none of them lives to see it go round, so they compare what they saw, tend a spiral of flowers that open and shut with the moonlight, and write the **Book of the Moon**, a book of myths.
+- **The aquarium** (`sims/aquarium/`): alien, bioluminescent fish who build a sand mandala and write the **Compendium**, a book of fish philosophy.
 
 ## Run
 
@@ -10,14 +15,14 @@ cp .env.example .env   # then fill it in
 npm run dev            # sim on :8080, web on :5173, mind connected to the sim
 ```
 
-While the aquarium is paused (see below), `npm run dev` shows it frozen; put `PAUSED=0` in `.env` to run it.
+`npm run dev` runs whichever simulation `sims/live.js` names (`SIM=aquarium` in `.env` picks the other). While that one is paused (see below) it's shown frozen; put `PAUSED=0` in `.env` to run it.
 
-The mind needs [uv](https://docs.astral.sh/uv/) and an OpenAI-compatible endpoint; fish art needs `FAL_API_KEY`. Without a mind (or when it is slow or down) fish act on a simple instinct, and newcomers arrive with a plain stand-in personality.
+The mind needs [uv](https://docs.astral.sh/uv/) and an OpenAI-compatible endpoint; the aquarium's fish art needs `FAL_API_KEY` (the garden draws everything itself). Without a mind (or when it is slow or down) the creatures act on a simple instinct, and newcomers arrive with a plain stand-in personality.
 
 ## Simulations
 
 hac.run runs one simulation at a time, and they can be swapped in and out. Each lives in `sims/<name>/`
-with its own server, client and (optionally) mind; the aquarium is `sims/aquarium/`. The host
+with its own server, client and (optionally) mind. The host
 (`server/index.js`) runs whichever one `sims/live.js` names: it serves its built client and files,
 streams it to observers on `/ws`, and hands its mind over on `/mind`. `sims/live.js` also says what a
 simulation has to provide.
@@ -26,6 +31,28 @@ A simulation can be **paused**: it's loaded as it was left and shown frozen, und
 sleeping… check back soon"), and it doesn't step, save or take a mind. `paused` in `sims/live.js` sets it
 for production; `SIM` and `PAUSED` in `.env` override it locally (`PAUSED=0` to run a paused one). Pausing
 or waking only needs a restart; switching simulations also needs `npm run build`.
+
+## How the night garden fits together
+
+Code paths below are in `sims/garden/`; `data/` is at the repo root.
+
+```
+ sim (Node, server/)   ── /ws: deltas at 10Hz, the book, the risen ──>  observers (Phaser, client/)
+   │  /mind: perception and births out, decisions and personas in (bearer MIND_TOKEN)
+   │  Wikipedia and PoetryDB (1 request per 2s at most) · SQLite (data/garden.db)
+ mind (Python, mind/)  ──>  LLM (DS4 on the Sparks, via vLLM)
+```
+
+- **The sky is a function of time** (`shared/garden.js`), so the sim and every observer compute the same one. A night lasts ten minutes and ends in the pale: the day, squeezed into under a minute, when the sky washes out and every flower shuts. The moon goes from new to new in eight nights and keeps the real moon's habits: a young moon is a thin curve already sinking at dusk, a full one crosses the whole night, an old one rises just before the pale, and around the new moon there is none. Clouds, wind, gusts, rain and a ring around the moon come and go, and now and then a full moon is eclipsed (a new garden's first always is).
+- **Fireflies live one night or less** (4 to 9 minutes). They kindle in the grass, and when the height calls them they rise out of the garden; a successor, prepared ahead of time, kindles carrying some of the myths its predecessor embraced. The garden holds 5. None of them can see the moon's cycle, only one shape in one part of the sky, or no moon at all; what each has seen with its own eyes is kept as its evidence (`witnessed`).
+- **Newcomers** (`server/births.js`): a random Wikipedia article, or about one time in three a random poem (`server/texts.js`), becomes a firefly through the mind: name, personality, a voice taken from how the text is written, a rhythm for its light, a **hunch** about what the moon is that grows out of the text's subject, and 2-4 memories of its long time as a grub under the soil.
+- **The Book of the Moon**: when a firefly arrives at an explanation it sets down a myth in one of twelve chapters (what the moon is, why it changes, where it goes, the moon in the water, the pale, ...), optionally as a reworking of a myth it carries. Each is signed with the moon it was set down under, and whether its teller ever saw the moon. Speaking tells whoever hears. Fireflies embrace or dispute what they carry, hold at most 8 myths, and pass on the ones they embraced. The book keeps up to 2000.
+- **Plants live fast** (`shared/flora.js`): a genome of form (bells, stars, trumpets, spires, umbels, ferns, grasses, clockflowers, bushes, glowing caps, vines on the wall, lilies on the pond), colors, shape and a **window of moonlight** in which its flowers stand open: some want a bright moon, some only the dark, some the dimness between. They sprout, flower, go to seed and die within a night or two. Seeds ride the wind and take root where they land; fireflies carry pollen from flower to flower, making hybrids; a plant that never meets its moon dies without seed, so the garden's flowers shift with the month. Rain speeds growth and brings up caps; new seeds blow in over the wall. Flowers turn to follow the moon. The client draws each plant from its genome alone (`client/flora.js`), growing it out joint by joint.
+- **The spiral** is the shared work: a bed of nineteen plots. A firefly takes a seed from a wild plant that is in seed and sows it in a plot (`sow`), pulls up what doesn't belong (`uproot`), or glows on a shut flower until it opens for a while (`wake`). When every plot stands open at the same moment the spiral flowers for two and a half minutes and pours its light upward, then goes to seed, and a few plots sprout again from its own seed. Since flowers open under different moons, what they sow decides under which moon it can ever flower.
+- **Watching and touching**: `watch_sky` takes a firefly up into open air, and it comes back knowing exactly what the moon did meanwhile; `touch_pond` breaks the moon in the water into rings.
+- **Needs**: nectar (sipped from open flowers), rest, company and wonder. Nothing here dies of them, and nothing bites.
+- **The mind decides** (`mind/main.py`, Pydantic AI): a typed `Decision` per turn (thought, feeling, optional speech, a new myth, a myth to pass on, a stance, an impression, a note to remember, 1-4 actions) and a `Persona` per newcomer.
+- Conversation, observers' deltas and persistence work as in the aquarium (below); the garden is saved to `data/garden.db`.
 
 ## How the aquarium fits together
 

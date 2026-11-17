@@ -1,7 +1,8 @@
 # Agent notes
 
-See README.md for what the aquarium is and how the pieces fit together. The host (`server/`) runs one
-simulation from `sims/<name>/`, picked (and paused or not) in `sims/live.js`; the aquarium is `sims/aquarium/`.
+See README.md for what the simulations are and how the pieces fit together. The host (`server/`) runs one
+simulation from `sims/<name>/`, picked (and paused or not) in `sims/live.js`: right now the night garden
+(`sims/garden/`). The aquarium (`sims/aquarium/`) is the other one; its tank is still on the droplet, as it was left.
 
 ## Deploying to hac.run
 
@@ -13,8 +14,8 @@ What runs where:
 
 - **The sim** runs on the droplet as `lbl.service` (systemd, user `lbl`) from a git checkout in `/opt/lbl`,
   listening on `127.0.0.1:8080`. It serves the built client from `/opt/lbl/dist`.
-- **The mind** runs on the droplet as `lbl-mind.service` (user `lbl`, Python from
-  `/opt/lbl/sims/aquarium/mind/.venv`, set up with `uv sync`). While the aquarium is paused it's stopped and
+- **The mind** runs on the droplet as `lbl-mind.service` (user `lbl`, Python from the live simulation's
+  `/opt/lbl/sims/garden/mind/.venv`, set up with `uv sync`). While the live simulation is paused it's stopped and
   disabled (the sim turns minds away). It connects to the sim over `ws://127.0.0.1:8080/mind`, and reaches DS4 through
   the Cloudflare tunnel at `https://sparks-a.alturas.ai/v1` with the Access service-token headers
   (`BRAIN_CF_ID` / `BRAIN_CF_SECRET`).
@@ -25,11 +26,11 @@ What runs where:
   checkout: `FAL_API_KEY`, `MIND_TOKEN`, `BRAIN_URL`, `BRAIN_KEY`, `BRAIN_MODEL`, `BRAIN_CF_ID`,
   `BRAIN_CF_SECRET`, `SIM_URL`. The droplet's `MIND_TOKEN` exists only there, so no mind on a dev
   machine can connect to hac.run. Don't point a dev mind at `wss://hac.run/mind`.
-- **Data** lives in `/var/lib/lbl/data` (SQLite and the fish portrait pool in `fish/pool`). The sim unit can
-  only write there.
+- **Data** lives in `/var/lib/lbl/data`: the garden's `garden.db*`, and the aquarium's `aquarium.db*` and fish
+  portrait pool (`fish/pool`). The sim unit can only write there.
 
 Cloudflare drops a request that sends nothing back for 100 seconds, so every call the mind makes streams
-(see `run_streaming` in `sims/aquarium/mind/main.py`). Keep it that way when adding calls.
+(see `run_streaming` in `sims/garden/mind/main.py`). Keep it that way when adding calls.
 
 ### Steps
 
@@ -48,8 +49,8 @@ Cloudflare drops a request that sends nothing back for 100 seconds, so every cal
    # sudo -u lbl npm ci
    # Only when a sim's client/ or shared/ changed, or sims/live.js switched simulations:
    sudo -u lbl npm run build
-   # Only when sims/aquarium/mind/pyproject.toml or uv.lock changed:
-   # sudo -u lbl env HOME=/var/lib/lbl UV_PYTHON_INSTALL_DIR=/var/lib/lbl/python UV_CACHE_DIR=/var/lib/lbl/.cache/uv uv sync -q --project sims/aquarium/mind --frozen
+   # Only when sims/garden/mind/pyproject.toml or uv.lock changed:
+   # sudo -u lbl env HOME=/var/lib/lbl UV_PYTHON_INSTALL_DIR=/var/lib/lbl/python UV_CACHE_DIR=/var/lib/lbl/.cache/uv uv sync -q --project sims/garden/mind --frozen
    systemctl restart lbl.service lbl-mind.service
    sleep 5
    journalctl -u lbl --no-pager -n 5 -o cat
@@ -58,15 +59,15 @@ Cloudflare drops a request that sends nothing back for 100 seconds, so every cal
    $script | ssh -o BatchMode=yes root@165.232.128.96 "tr -d '\r' | sed '1s/^\xEF\xBB\xBF//' | bash -s"
    ```
 
-   The sim's journal should show `resumed the aquarium at t=...`, `lbl aquarium on :8080` and
-   `mind connected from 127.0.0.1`; the mind's, `connected to ws://127.0.0.1:8080/mind`. The tank picks
-   up where it left off (it's saved every 15 seconds and on shutdown). While the mind is down, fish act on
-   instinct.
-3. Check https://hac.run in a browser: fish moving, the Codex filled in, speech bubbles once the mind
+   The sim's journal should show `resumed the garden at t=...`, `lbl garden on :8080` and
+   `mind connected from 127.0.0.1`; the mind's, `connected to ws://127.0.0.1:8080/mind`. The garden picks
+   up where it left off (it's saved every 15 seconds and on shutdown). While the mind is down, fireflies act
+   on instinct.
+3. Check https://hac.run in a browser: fireflies moving, the Codex filled in, speech bubbles once the mind
    answers.
 
 Server-only changes (`server/`, `sims/*/server/`) need just the pull and `systemctl restart lbl.service`;
-mind-only changes (`sims/aquarium/mind/main.py`), just `systemctl restart lbl-mind.service`. Watching the logs:
+mind-only changes (`sims/garden/mind/main.py`), just `systemctl restart lbl-mind.service`. Watching the logs:
 `ssh root@165.232.128.96 "journalctl -u lbl -u lbl-mind -f -o cat"`.
 
 ### Pausing, waking and swapping
@@ -74,15 +75,17 @@ mind-only changes (`sims/aquarium/mind/main.py`), just `systemctl restart lbl-mi
 `LIVE` in `sims/live.js` names the simulation and whether it's paused. A paused one is shown frozen as
 it was left, under its note; it doesn't step or save, and `/mind` answers 503. To pause or wake: change
 `paused`, commit, push, pull on the droplet and `systemctl restart lbl.service` (no build needed). Stop the
-mind while paused (`systemctl disable --now lbl-mind`), and when waking the aquarium set it up again:
-`uv sync` as above, and the unit's `ExecStart` must be
-`/opt/lbl/sims/aquarium/mind/.venv/bin/python sims/aquarium/mind/main.py` (then
-`systemctl daemon-reload && systemctl enable --now lbl-mind`). Swapping in another simulation is the same
-plus `npm run build`, and its own mind service if it has one. Each simulation keeps its own files in
-`/var/lib/lbl/data` (the aquarium's are `aquarium.db*` and `fish/`).
+mind while paused (`systemctl disable --now lbl-mind`), and start it again when waking
+(`systemctl enable --now lbl-mind`).
 
-Starting over (a fresh tank): stop both units, delete `/var/lib/lbl/data/aquarium.db*` (keep `fish/pool`,
-a cache of paid-for portraits), and start them again.
+Swapping in the other simulation is the same plus `npm run build` and pointing the mind unit at its mind:
+`uv sync` as above with `--project sims/<name>/mind`, set the unit's `ExecStart` in
+`/etc/systemd/system/lbl-mind.service` to `/opt/lbl/sims/<name>/mind/.venv/bin/python sims/<name>/mind/main.py`
+(it is the garden's now), then `systemctl daemon-reload && systemctl enable --now lbl-mind`. Each simulation
+keeps its own files in `/var/lib/lbl/data`, so the one swapped out is still there when it's swapped back in.
+
+Starting over: stop both units, delete the simulation's database (`/var/lib/lbl/data/garden.db*`, or
+`aquarium.db*` but keep `fish/pool`, a cache of paid-for portraits), and start them again.
 
 ## Developing locally
 
