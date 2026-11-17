@@ -40,6 +40,11 @@ class GlowPool {
 // light one; ?debug shows what the GPU is.
 const params = new URLSearchParams(location.search);
 const LITE = params.has('lite') || (!params.has('fx') && matchMedia('(pointer: coarse)').matches);
+// The garden is 1280x720 in its own units. Drawn at that size and stretched to a large window it
+// goes soft, the small things worst (a firefly is a dozen pixels long), so on anything bigger it's
+// drawn at twice the size and the camera zoomed to match.
+const RES = LITE ? 1 : Math.max(innerWidth * devicePixelRatio / W, innerHeight * devicePixelRatio / H) > 1.25 ? 2 : 1;
+const FINE = 4; // small sprites are painted this much larger than they're shown
 const DEBUG = params.has('debug');
 
 // Problems that would otherwise leave a silent black garden are shown over it, so they can be read
@@ -85,6 +90,7 @@ class Garden extends Phaser.Scene {
   constructor() { super('garden'); }
 
   create() {
+    this.cameras.main.setZoom(RES).centerOn(W / 2, H / 2);
     this.makeTextures();
     this.drawBackdrop();
     this.ents = new Map();     // id -> merged entity state from snapshots
@@ -125,8 +131,9 @@ class Garden extends Phaser.Scene {
   // ---------- textures and backdrop ----------
 
   makeTextures() {
-    const canvas = (key, w, h, draw) => {
-      const t = this.textures.createCanvas(key, w, h);
+    const canvas = (key, w, h, draw, fine = 1) => {
+      const t = this.textures.createCanvas(key, w * fine, h * fine);
+      t.getContext().scale(fine, fine);
       draw(t.getContext(), w, h);
       t.refresh();
     };
@@ -174,19 +181,20 @@ class Garden extends Phaser.Scene {
       c.fillStyle = '#b98f52'; c.fillRect(18.2, 5.2, 1.4, 4.6);
       c.strokeStyle = '#3a2a1c'; c.lineWidth = 0.8;
       c.beginPath(); c.moveTo(23.5, 6); c.quadraticCurveTo(26, 2.5, 27.5, 3); c.moveTo(23.5, 7); c.quadraticCurveTo(26.5, 5, 27.5, 6.5); c.stroke();
-    });
+    }, FINE);
     canvas('wings', 22, 12, (c) => {
       c.fillStyle = 'rgba(210,225,255,0.55)';
       c.beginPath(); c.ellipse(8, 6, 8, 3.2, -0.25, 0, TAU); c.fill();
       c.beginPath(); c.ellipse(13, 6, 8, 3.2, 0.2, 0, TAU); c.fill();
-    });
+    }, FINE);
   }
 
   // Everything that stands still is painted once, as it looks in the pale's flat light, and tinted
   // down to night (see `ambient`) every frame.
   drawBackdrop() {
     const rnd = (lo, hi) => lo + Math.random() * (hi - lo);
-    const paint = (key, w, h, draw) => { const t = this.textures.createCanvas(key, w, h); draw(t.getContext()); t.refresh(); };
+    // Painted at the size they'll be seen at, and shown scaled back down to garden units.
+    const paint = (key, w, h, draw) => { const t = this.textures.createCanvas(key, w * RES, h * RES); t.getContext().scale(RES, RES); draw(t.getContext()); t.refresh(); };
     const skyH = WORLD.ground + 4;
 
     paint('sky', W, skyH, (c) => {
@@ -399,15 +407,15 @@ class Garden extends Phaser.Scene {
       c.fillStyle = shade; c.fillRect(0, 0, W, 26);
     });
 
-    this.add.image(0, 0, 'sky').setOrigin(0, 0).setDepth(DEPTH.sky);
-    this.paleSky = this.add.image(0, 0, 'pale').setOrigin(0, 0).setDepth(DEPTH.pale).setAlpha(0);
-    this.wall = this.add.image(0, wallY, 'wall').setOrigin(0, 0).setDepth(DEPTH.wall);
-    this.ground = this.add.image(0, groundY, 'ground').setOrigin(0, 0).setDepth(DEPTH.ground);
+    this.add.image(0, 0, 'sky').setOrigin(0, 0).setDepth(DEPTH.sky).setScale(1 / RES);
+    this.paleSky = this.add.image(0, 0, 'pale').setOrigin(0, 0).setDepth(DEPTH.pale).setAlpha(0).setScale(1 / RES);
+    this.wall = this.add.image(0, wallY, 'wall').setOrigin(0, 0).setDepth(DEPTH.wall).setScale(1 / RES);
+    this.ground = this.add.image(0, groundY, 'ground').setOrigin(0, 0).setDepth(DEPTH.ground).setScale(1 / RES);
     this.fore = [
       this.add.image(0, 0, 'boughL').setOrigin(0, 0).setData({ turn: 0.012 }),
       this.add.image(W, 0, 'boughR').setOrigin(1, 0).setData({ turn: -0.012 }),
       this.add.image(0, H + 2, 'nearGrass').setOrigin(0, 1).setData({ turn: 0 }),
-    ].map((img) => img.setDepth(DEPTH.fore));
+    ].map((img) => img.setDepth(DEPTH.fore).setScale(1 / RES));
 
     this.stars = Array.from({ length: LITE ? 130 : 280 }, () => {
       const bright = Math.random() < 0.1;
@@ -485,12 +493,12 @@ class Garden extends Phaser.Scene {
     } else if (e.kind === 'firefly') {
       v.wings = this.add.image(e.x, e.y, 'wings').setDepth(DEPTH.fly - 0.1);
       v.img = this.interactive(this.add.image(e.x, e.y, 'fly').setDepth(DEPTH.fly), e.id);
-      v.img.setInteractive(new Phaser.Geom.Circle(13, 7, 30), Phaser.Geom.Circle.Contains); // the beetle is small; its light is the target
+      v.img.setInteractive(new Phaser.Geom.Circle(13 * FINE, 7 * FINE, 30 * FINE), Phaser.Geom.Circle.Contains); // the beetle is small; its light is the target
       v.lamp = this.add.image(e.x, e.y, 'glow').setDepth(DEPTH.fly + 0.1).setBlendMode(Phaser.BlendModes.ADD);
       v.core = this.add.image(e.x, e.y, 'mote').setDepth(DEPTH.fly + 0.2).setBlendMode(Phaser.BlendModes.ADD);
       v.seed = this.add.image(e.x, e.y, 'mote').setDepth(DEPTH.fly + 0.2).setVisible(false);
       v.label = this.add.text(e.x, e.y, e.name, { fontFamily: 'Inter, sans-serif', fontSize: '11px', color: '#b9c4e6' })
-        .setOrigin(0.5, 0).setDepth(DEPTH.label).setAlpha(0);
+        .setOrigin(0.5, 0).setDepth(DEPTH.label).setAlpha(0).setResolution(RES * Math.min(2, devicePixelRatio));
       v.ex = e.x; v.ey = e.y;
     }
     return v;
@@ -783,11 +791,11 @@ class Garden extends Phaser.Scene {
     const color = hexToInt(e.glow);
     // Flying, it hangs head-up from its wings with the lamp below; sitting, it lies along its perch.
     const pitch = v.air * 0.75 + (1 - v.air) * (0.15 + 0.5 * ((e.id * 0.618) % 1)) * (v.ey < WORLD.ground ? 1 : 0.3);
-    const body = size * 0.62;
+    const body = (size * 0.62) / FINE;
     v.img.setPosition(x, y).setFlipX(e.facing < 0).setScale(body).setRotation(-pitch * e.facing)
       .setTint(mix(0x565c74, 0xffffff, Math.max(sky.light * 0.8, sky.pale)));
-    v.wings.setPosition(x + e.facing * 1.5 * body, y - 5 * body).setScale(body * 1.25, body * (0.3 + 0.9 * Math.abs(Math.sin(t * 47 + e.id)))).setAlpha(0.3 * v.air);
-    const lx = x - e.facing * 7 * body * Math.cos(pitch), ly = y + 7 * body * Math.sin(pitch) + 1;
+    v.wings.setPosition(x + e.facing * 1.5 * body * FINE, y - 5 * body * FINE).setScale(body * 1.25, body * (0.3 + 0.9 * Math.abs(Math.sin(t * 47 + e.id)))).setAlpha(0.3 * v.air);
+    const lx = x - e.facing * 7 * body * FINE * Math.cos(pitch), ly = y + 7 * body * FINE * Math.sin(pitch) + 1;
     v.lamp.setPosition(lx, ly).setScale(0.5 * size * (0.6 + 0.6 * light)).setTint(color).setAlpha(Math.min(1, light));
     v.core.setPosition(lx, ly).setScale(0.7 * size).setAlpha(Math.min(1, light * 0.95));
     this.halos.take(lx, ly, size * (1.2 + 1.3 * light) * (e.waking ? 1.6 : 1), color, 0.26 * light + (selected ? 0.07 : 0));
@@ -1190,8 +1198,8 @@ document.addEventListener('visibilitychange', () => {
 new Phaser.Game({
   type: Phaser.WEBGL,
   parent: 'garden',
-  width: W,
-  height: H,
+  width: W * RES,
+  height: H * RES,
   backgroundColor: '#04060f',
   // Cover the whole garden area (trimming a sliver off whichever edges don't fit) rather than letterboxing it.
   scale: { mode: Phaser.Scale.ENVELOP, autoCenter: Phaser.Scale.CENTER_BOTH },
