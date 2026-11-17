@@ -21,6 +21,8 @@ export function createBirths(world, { log = console.log }) {
       world.mind.send({
         t: 'birth', id: arr.id, generation: arr.gen, temperament: TEMPERAMENTS[Math.floor(Math.random() * TEMPERAMENTS.length)],
         article: { kind: article.kind, title: article.title, by: article.by, text: article.text },
+        // Names lately used here, and the ones chosen for newcomers still waiting: no two alike.
+        names_taken: [...new Set([...world.names, ...world.arrivals.map((a) => a.persona?.name).filter(Boolean)])],
         predecessor: arr.predecessorName && {
           name: arr.predecessorName,
           myth: arr.lore.map((l) => world.lore.get(l.id)?.text).find(Boolean) ?? null,

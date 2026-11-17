@@ -37,6 +37,7 @@ const SEEDING = 110;          // s a plant stands in seed, letting its seeds go
 const WAKE_SECS = 45;         // s a flower stays open after a firefly wakes it
 const KEEP_FLOWERS = 3;       // plots of a spent spiral that sprout again from its own seed
 const SPIRALS_KEPT = 40;      // finished spirals remembered after they've gone to seed
+const NAMES_KEPT = 60;        // names of the latest fireflies, which newcomers are kept from repeating
 const CARRY = 8;              // myths one firefly can carry in mind at once
 const COMPOSE_GAP = 75;       // s between new myths from one firefly, so ideas get time to be talked over
 const INHERIT = 4;            // myths a newcomer arrives with, from the firefly it follows
@@ -73,7 +74,7 @@ export function createWorld(store = nullStore(), { empty = false } = {}) {
     tick: 0, time: 0, nextId: 1, entities: [], lore: new Map(), nextLoreId: 1, arrivals: [],
     slotOpenAt: null, lastDrift: 0, nextStar: 60, mind: null, store, emit: () => {},
     speech: [], floorUntil: 0, // lines waiting to be said, and when the current one has been read
-    spiral: newSpiral(1), spirals: [], omens: [], seen: null,
+    spiral: newSpiral(1), spirals: [], omens: [], seen: null, names: [],
   };
   if (empty) return world;
   for (let i = 0; i < START_WILD; i++) {
@@ -340,33 +341,67 @@ function beginFlowering(world, sky) {
   world.emit({ kind: 'spiral', text: `The ${ordinal(sp.number)} spiral is in full flower: every plot open at once, under ${moonMark(sky).words}.` });
 }
 
-// The moonlight in which every planted flower would stand open at once, in words; or which two can't.
-function spiralNote(world) {
+// The kinds of moonlight a bed can be sown for, the commonest first. A flower belongs to one if it
+// stands open all the way across it. (Faint light isn't among them: the moon passes through it too
+// quickly for nineteen flowers to catch it together.)
+const BED_LIGHTS = [
+  { lo: 0, hi: 0.03, when: 'in the dark, while there is no moon in the sky', kind: 'open in the dark' },
+  { lo: 0.62, hi: 0.78, when: 'under a bright moon', kind: 'open to a bright moon' },
+  { lo: 0.18, hi: 0.32, when: 'under a dim moon', kind: 'open under a dim moon' },
+  { lo: 0.4, hi: 0.55, when: 'under a half-bright moon', kind: 'open under a half-bright moon' },
+  { lo: 0.82, hi: 0.92, when: 'under a brilliant moon', kind: 'open to a brilliant moon' },
+];
+// Whether flowers that all open between `lo` and `hi` could be caught open together: in the dark,
+// which is half of every night, or in a band of moonlight wide enough that the moon lingers in it.
+const workable = (lo, hi) => (lo <= 0 && hi >= 0.03) || hi - lo >= 0.15;
+const inLight = (g, b) => g.lo <= b.lo && g.hi >= b.hi;
+
+// What light the spiral as sown could flower in. Either all its flowers share a workable band of
+// moonlight, or they don't, and then the light most of them open in is the bed's, and the rest are
+// out of place.
+function bedLight(world) {
   const here = world.spiral.plots.map((_, i) => plotPlant(world, i)).filter(Boolean);
+  const lo = Math.max(0, ...here.map((p) => p.genome.lo)), hi = Math.min(1, ...here.map((p) => p.genome.hi));
+  if (workable(lo, hi)) return { here, ok: true, lo, hi, misfits: [] };
+  const light = BED_LIGHTS.map((b) => ({ b, n: here.filter((p) => inLight(p.genome, b)).length })).reduce((a, c) => (c.n > a.n ? c : a)).b;
+  return { here, ok: false, light, misfits: here.filter((p) => !inLight(p.genome, light)) };
+}
+// Whether a flower with this genome would open along with the bed as sown.
+const suitsBed = (bed, g) => (bed.ok ? workable(Math.max(bed.lo, g.lo), Math.min(bed.hi, g.hi)) : inLight(g, bed.light));
+
+const listed = (items) => (items.length < 2 ? items.join('') : `${items.slice(0, -1).join(', ')} and ${items.at(-1)}`);
+
+// Where the spiral stands, in words: the moonlight in which every planted flower would stand open at
+// once, or which flowers keep that from ever happening.
+function spiralNote(world, bed = bedLight(world)) {
   if (world.spiral.floweringAt != null) return `the Flowering: every plot is open; it will last ${minutes(Math.max(0, SPIRAL.flowering - (world.time - world.spiral.floweringAt)))} more, then all goes to seed`;
+  const { here } = bed;
   if (!here.length) return 'bare: nothing sown yet';
-  const needs = here.reduce((a, b) => (b.genome.lo > a.genome.lo ? b : a)), shy = here.reduce((a, b) => (b.genome.hi < a.genome.hi ? b : a));
   const left = SPIRAL.plots - here.length;
   const todo = left ? `${left} plot${left > 1 ? 's' : ''} still empty. ` : '';
-  if (needs.genome.lo > shy.genome.hi - 0.02) {
-    return `${todo}As sown, these can never all open by themselves at once: the ${needs.name} in plot ${needs.plot} needs more moonlight than the ${shy.name} in plot ${shy.plot} can bear. ` +
-      'One of them must be replaced, or woken by a firefly at the right moment.';
+  if (!bed.ok) {
+    const out = bed.misfits, many = out.length > 1;
+    return `${todo}As sown, the spiral can never flower: there is no moonlight in which all of these stand open at once. ` +
+      `${here.length - out.length} of the ${here.length} sown open ${bed.light.when}; the flower${many ? 's' : ''} in plot${many ? 's' : ''} ${listed(out.map((p) => p.plot))} ${many ? 'do' : 'does'} not. ` +
+      `Uproot ${many ? 'those' : 'that one'} and sow in ${many ? 'their' : 'its'} place flowers that ${bed.light.kind}` +
+      (out.length < 3 ? `, or wake ${many ? 'them' : 'it'} while all the rest stand open.` : '.');
   }
-  const lo = lightWord(needs.genome.lo + 0.001), hi = lightWord(Math.min(1, shy.genome.hi) - 0.001);
+  const lo = lightWord(bed.lo + 0.001), hi = lightWord(Math.min(1, bed.hi) - 0.001);
   return `${todo}As sown, they would all stand open together when the moonlight is ${lo === hi ? lo : `between ${lo} and ${hi}`} (right now it is ${lightWord(skyAt(world.time).light)}).`;
 }
 
 function describeSpiral(world) {
-  const sp = world.spiral;
+  const sp = world.spiral, bed = bedLight(world);
   const plots = sp.plots.map((_, i) => {
     const p = plotPlant(world, i);
     if (!p) return `${i}: empty`;
-    return `${i}: ${p.name} (#${p.id}), ${p.state === 'growing' ? 'still growing' : p.open ? 'OPEN' : 'closed'}; ${opensWords(p.genome)}`;
+    return `${i}: ${p.name} (#${p.id}), ${p.state === 'growing' ? 'still growing' : p.open ? 'OPEN' : 'closed'}; ${opensWords(p.genome)}` +
+      (bed.misfits.includes(p) ? '; OUT OF PLACE: it will stay shut when the rest open' : '');
   });
   const at = plotPos(0);
   return {
     number: sp.number, sown: `${planted(world)} of ${SPIRAL.plots} plots`, open_now: sp.plots.filter((_, i) => plotPlant(world, i)?.open).length,
-    plots, note: spiralNote(world), where: `plot 0 is the heart, at (${Math.round(at.x)}, ${Math.round(at.y)}); the plots wind outward to plot ${SPIRAL.plots - 1} at the front`,
+    plots, note: spiralNote(world, bed), where: `plot 0 is the heart, at (${Math.round(at.x)}, ${Math.round(at.y)}); the plots wind outward to plot ${SPIRAL.plots - 1} at the front`,
   };
 }
 
@@ -520,6 +555,8 @@ function enter(world, arr) {
     said: null, pollen: null, carrying: null, perched: false, farewelled: false, successor: null, composed: 0, sown: 0,
   };
   world.entities.push(f);
+  world.names.push(f.name);
+  if (world.names.length > NAMES_KEPT) world.names.shift();
   remember(world, f, 'crawled up out of the soil, split my old skin, and found I had wings and a light');
   if (arr.predecessorName) remember(world, f, `kindled as ${arr.predecessorName} rose out of the garden, carrying what ${arr.predecessorName} held to be true`);
   for (const l of f.lore) remember(world, f, `carries from ${arr.predecessorName}: "${world.lore.get(l.id).text}"`);
@@ -631,6 +668,20 @@ const findFly = (world, name) => {
   return all.find((o) => o.name.toLowerCase() === n) ?? all.find((o) => o.name.toLowerCase().startsWith(n)) ?? null;
 };
 
+// Whether a firefly has already said this, or nearly: minds are prone to saying a thing twice.
+const wordsOf = (text) => new Set(String(text).toLowerCase().match(/[\p{L}']+/gu) ?? []);
+function saidBefore(f, text) {
+  const words = wordsOf(text);
+  if (words.size < 4) return false;
+  return f.heard.some((h) => {
+    if (!h.mine) return false;
+    const old = wordsOf(h.text);
+    let shared = 0;
+    for (const w of words) if (old.has(w)) shared++;
+    return shared / Math.min(words.size, old.size) > 0.7;
+  });
+}
+
 // Over-long turns are cut at the last sentence that fits.
 function trimSpeech(text) {
   text = String(text).replace(/\s+/g, ' ').trim();
@@ -733,7 +784,7 @@ function compose(world, f, raw) {
   if (f.lore.length > CARRY) f.lore.shift();
   f.composed = (f.composed ?? 0) + 1;
   f.needs.wonder = Math.min(1, f.needs.wonder + 0.1);
-  remember(world, f, parent ? `reworked the myth "${parent.text}" into: "${text}"` : `set down a myth: "${text}"`);
+  remember(world, f, parent ? `reworked the myth "${parent.text}" into: "${text}"` : `made a new myth: "${text}"`);
   world.emit({ kind: 'lore', id: f.id, name: f.name, glow: f.glow, text, theme: lore.theme, loreId: lore.id, refinesText: lore.refinesText, refinesBy: lore.refinesBy });
   pruneLore(world);
   return lore.id;
@@ -938,7 +989,7 @@ const RUN = {
     steer(f, a.to.x, a.to.y + Math.sin(world.time * 0.8 + f.id) * 6, dt, 14, 2);
     a.left = (a.left ?? a.seconds) - dt;
     if (a.left > 0) return false;
-    watched(world, f, a.from, skyAt(world.time), a.seconds);
+    watched(world, f, a.from, skyAt(world.time));
     return true;
   },
 
@@ -1052,21 +1103,21 @@ const RUN = {
 };
 
 // What a firefly brings back from watching the sky: exactly what the moon did in that time.
-function watched(world, f, from, to, secs) {
+function watched(world, f, from, to) {
   f.watchedAt = world.time;
   let text;
   if (to.up && to.cover < 0.8) {
     const moved = from.up ? `In that time it crept toward the west wall and ${to.alt > from.alt + 0.004 ? 'climbed' : to.alt < from.alt - 0.004 ? 'sank lower' : 'held its height'}; it did not change shape as I watched.` : 'It rose over the east wall while I watched.';
-    text = `watched the moon for ${secs}s: ${moonShape(to)}, ${moonPlace(to)}. ${moved}` +
+    text = `watched the moon for a while: ${moonShape(to)}, ${moonPlace(to)}. ${moved}` +
       (to.eclipse > 0.3 ? ' A rust-red shadow lies across it.' : '') + (to.halo && to.eclipse < 0.3 ? ' A wide pale ring stands around it.' : '') +
       (to.cover > 0.35 ? ' Thin cloud is passing in front of it; the cloud moves, the moon stays.' : '') +
       (to.lit > 0.05 && to.lit < 0.9 ? ` Its bright side faces the ${to.waxing ? 'west wall, where the pale went down' : 'east wall, where the pale comes up'}.` : '');
     f.needs.wonder = Math.min(1, f.needs.wonder + 0.22);
   } else if (to.up) {
-    text = `watched the sky for ${secs}s: the moon is somewhere behind the cloud, a smear of light ${moonPlace(to)}`;
+    text = `watched the sky for a while: the moon is somewhere behind the cloud, a smear of light ${moonPlace(to)}`;
     f.needs.wonder = Math.min(1, f.needs.wonder + 0.1);
   } else {
-    text = `watched the sky for ${secs}s: no moon anywhere${from.up ? ' (it sank behind the west wall as I watched)' : ''}. ` +
+    text = `watched the sky for a while: no moon anywhere${from.up ? ' (it sank behind the west wall as I watched)' : ''}. ` +
       (to.pale > 0.2 ? 'The pale is washing everything out.' : to.cloudiness > 0.75 ? 'Only cloud.' : 'Only the small cold stars, which keep their places and their shapes.');
     f.needs.wonder = Math.min(1, f.needs.wonder + 0.1);
   }
@@ -1144,7 +1195,15 @@ const plantState = (p) =>
 function perceive(world, f) {
   const sky = skyAt(world.time);
   const others = flies(world).filter((o) => o !== f);
-  const ago = (t) => `${Math.round(world.time - t)}s ago`;
+  // Fireflies have no clocks: how long ago something was is only roughly known (lists run oldest first).
+  const ago = (t) => { const s = world.time - t; return s < 15 ? 'just now' : s < 60 ? 'a moment ago' : s < 180 ? 'a little while ago' : s < 400 ? 'a good while ago' : 'long ago, early in your night'; };
+  const bed = bedLight(world);
+  const sowing = bed.here.length > 0 && world.spiral.floweringAt == null;
+  // The questions the garden's myths have hardly touched, so talk doesn't all run down one track.
+  const told = Object.fromEntries(THEMES.map((t) => [t, 0]));
+  for (const l of world.lore.values()) told[l.theme]++;
+  const most = Math.max(...Object.values(told));
+  const untouched = THEMES.filter((t) => told[t] <= most / 4).sort((a, b) => told[a] - told[b]).slice(0, 4);
   const alive = plants(world).filter((p) => p.plot == null && ['growing', 'mature', 'seeding'].includes(p.state));
   const near = alive.map((p) => ({ p, d: dist(f, headPoint(p)) })).sort((a, b) => a.d - b.d);
   // The nearest flowers to drink from, and the nearest plants in seed (the spiral needs those).
@@ -1162,13 +1221,13 @@ function perceive(world, f) {
       generation: f.gen, personality: f.persona.personality, desire: f.persona.desire, your_hunch_about_the_moon: f.persona.hunch,
       ...(f.persona.images?.length ? { images: f.persona.images } : {}),
       ...(glimmers(f).length ? { memories_from_under_the_soil: glimmers(f) } : {}),
-      ...(f.composedAt != null ? { last_set_down_a_myth: `${Math.round(world.time - f.composedAt)}s ago${world.time - f.composedAt < COMPOSE_GAP ? ' (too soon for another; talk it over first)' : ''}` } : {}),
-      time_in_garden: minutes(ageOf(world, f)), life_stage: stage(world, f), x: Math.round(f.x), y: Math.round(f.y),
+      ...(f.composedAt != null ? { last_made_a_myth: `${ago(f.composedAt)}${world.time - f.composedAt < COMPOSE_GAP ? ' (too soon for another; talk it over first)' : ''}` } : {}),
+      life_stage: stage(world, f), x: Math.round(f.x), y: Math.round(f.y),
       needs: Object.fromEntries(Object.entries(f.needs).map(([k, v]) => [k, r2(v)])), feeling: f.emotion,
       ...(partner ? { talking_with: partner.name } : {}),
       ...(f.carrying ? { carrying_a_seed_of: f.carrying.name } : {}),
       ...(f.pollen ? { dusted_with_pollen_of: f.pollen.name } : {}),
-      ...(world.time - (f.watchedAt ?? -1e9) < 60 ? { just_watched: 'what you saw is the newest thing in sky.you_have_witnessed. Sit with it: does it fit the myths you carry?' } : {}),
+      ...(world.time - (f.watchedAt ?? -1e9) < 60 ? { just_watched: 'what you saw is the newest thing in sky.what_you_have_seen. Sit with it: what could have made it so, and does it fit the myths you carry?' } : {}),
       ...(world.speech.some((s) => s.id === f.id) ? { waiting_to_say: world.speech.find((s) => s.id === f.id).text } : {}),
     },
     ...(f.predecessorName ? { lineage: `you kindled as ${f.predecessorName} rose; before them: ${(f.lineage ?? []).slice(1).join(', ') || 'no one remembered'}` } : {}),
@@ -1176,7 +1235,7 @@ function perceive(world, f) {
       now: skyNow(sky), moonlight_in_the_garden: lightWord(sky.light),
       weather: sky.rain > 0.3 ? 'raining' : sky.cloudiness > 0.75 ? 'overcast' : sky.cloudiness > 0.4 ? 'clouds drifting west' : 'clear',
       ...(Math.abs(sky.wind) > 0.75 ? { wind: `a gust is blowing toward the ${sky.wind > 0 ? 'west' : 'east'} wall` } : {}),
-      you_have_witnessed: f.witnessed?.length ? f.witnessed.map((w) => `${ago(w.at)}: ${w.text}`) : ['nothing yet'],
+      what_you_have_seen: f.witnessed?.length ? f.witnessed.map((w) => `${ago(w.at)}: ${w.text}`) : ['nothing yet'],
       ...(!f.seenMoon ? { note: 'you have never seen the moon with your own eyes; all you know of it is what others say and the myths you carry' } : {}),
     },
     fireflies: others.map((o) => ({
@@ -1188,8 +1247,11 @@ function perceive(world, f) {
     plants: shown.map(({ p, d }) => ({
       id: p.id, what: p.name, x: p.x, y: Math.round(headPoint(p).y), distance: Math.round(d), state: plantState(p),
       ...(p.genome.form !== 'cap' ? { flowers: `${hueWord(p.genome.hue2)}; ${opensWords(p.genome)}` } : {}),
+      ...(sowing && p.state === 'seeding' && GROUND_FORMS.includes(p.genome.form)
+        ? { for_the_spiral: suitsBed(bed, p.genome) ? 'suits it: its flowers would open along with what is sown there' : 'does not suit it: its flowers would stay shut when the rest open' } : {}),
     })),
     spiral: describeSpiral(world),
+    ...(untouched.length ? { questions_hardly_touched: untouched } : {}),
     pond: { x: POND.x, y: POND.y, holds: sky.rain > 0.3 ? 'rain rings' : sky.up && sky.cover < 0.8 ? 'a second moon, trembling a little' : 'no moon; stars, when the sky is clear' },
     conversation: f.heard.slice(-CONVERSATION).map((h) =>
       `${ago(h.at)}, ${h.mine ? 'you' : h.from}${!h.mine && !here.has(h.from) ? ' (since risen)' : ''} said${h.to ? ` to ${h.to === f.name ? 'you' : h.to}` : ''}: "${h.text}"`),
@@ -1198,7 +1260,7 @@ function perceive(world, f) {
     memory: f.memory.slice(-8).map((m) => `${ago(m.at)}: ${recall(m)}`),
     myths_you_carry: f.lore.map((k) => ({ k, l: world.lore.get(k.id) })).filter(({ l }) => l).map(({ k, l }) => ({
       id: l.id, text: l.text, about: l.theme,
-      origin: l.originId === f.id ? 'yours' : `${l.originName} (generation ${l.originGen}), set down under ${l.moon?.words ?? 'an unknown sky'}`,
+      origin: l.originId === f.id ? 'yours' : `${l.originName} (generation ${l.originGen}), first told under ${l.moon?.words ?? 'an unknown sky'}`,
       ...(l.refinesText ? { reworks: `${l.refinesBy}'s "${l.refinesText.length > 90 ? l.refinesText.slice(0, 90) + '…' : l.refinesText}"` } : {}),
       heard_from: k.from, your_stance: k.stance,
       ...((l.agreed?.length ?? 0) > 1 ? { embraced_by_others: true } : {}), ...((l.disputed?.length ?? 0) > 0 ? { disputed_by_some: true } : {}),
@@ -1230,7 +1292,10 @@ export function applyPlan(world, msg) {
   if (msg.stance) takeStance(world, f, msg.stance);
   let loreId = f.lore.some((l) => l.id === msg.share_myth_id) ? msg.share_myth_id : null;
   if (msg.new_myth?.text) loreId = compose(world, f, msg.new_myth) ?? loreId;
-  if (typeof msg.say?.text === 'string' && msg.say.text.trim()) queueSpeech(world, f, msg.say.text, msg.say.to, loreId);
+  if (typeof msg.say?.text === 'string' && msg.say.text.trim()) {
+    if (saidBefore(f, msg.say.text)) remember(world, f, 'began to say again something I had already said, and let it go');
+    else queueSpeech(world, f, msg.say.text, msg.say.to, loreId);
+  }
   if (f.rethink) { f.rethink = false; f.rethinkAt = world.time + 5; }
   if (f.leaving) return true; // last words only; the height decides where it goes
   f.action = null;
@@ -1286,7 +1351,14 @@ function instinct(world, f) {
   }
   const roll = Math.random();
   const empty = world.spiral.plots.map((v, i) => (v == null ? i : -1)).filter((i) => i >= 0);
-  const seeder = near(plants(world).filter((p) => p.state === 'seeding' && GROUND_FORMS.includes(p.genome.form)));
+  const bed = bedLight(world);
+  const seeders = plants(world).filter((p) => p.state === 'seeding' && GROUND_FORMS.includes(p.genome.form));
+  const seeder = near(seeders.filter((p) => suitsBed(bed, p.genome))) ?? near(seeders);
+  if (roll < 0.15 && bed.misfits.length && world.spiral.floweringAt == null) {
+    f.plan = [{ type: 'uproot', plot: bed.misfits[0].plot }];
+    f.thought = 'This one does not belong.';
+    return;
+  }
   if (roll < 0.4 && empty.length && seeder && world.spiral.floweringAt == null) {
     f.plan = [{ type: 'sow', plant_id: seeder.id, plot: empty[0] }];
     f.thought = 'A seed for the spiral.';
@@ -1433,7 +1505,7 @@ export function snapshot(world) {
 export function serialize(world) {
   return JSON.stringify({
     version: 1, time: world.time, nextId: world.nextId, nextLoreId: world.nextLoreId, arrivals: world.arrivals, entities: world.entities,
-    spiral: world.spiral, spirals: world.spirals, lastDrift: world.lastDrift, nextStar: world.nextStar,
+    spiral: world.spiral, spirals: world.spirals, lastDrift: world.lastDrift, nextStar: world.nextStar, names: world.names,
   });
 }
 
@@ -1444,6 +1516,7 @@ export function restore(store, json, lore) {
   Object.assign(world, {
     time: data.time, nextId: data.nextId, nextLoreId: data.nextLoreId, arrivals: data.arrivals, entities: data.entities,
     spiral: data.spiral, spirals: data.spirals ?? [], lastDrift: data.lastDrift ?? data.time, nextStar: data.nextStar ?? data.time + 60,
+    names: data.names ?? [],
   });
   for (const l of lore) world.lore.set(l.id, l);
   for (const l of lore) world.nextLoreId = Math.max(world.nextLoreId, l.id + 1);
