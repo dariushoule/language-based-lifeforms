@@ -217,7 +217,7 @@ function shapeOf(g) {
 
 // Positions of every strand's joints right now, and how far grown each joint is (0 to 1): a plant
 // grows out from its root, joint after joint, so a sprout is its first few segments, not a small
-// copy of the whole. Sway travels up each strand like a wave, and wind leans it.
+// copy of the whole. Wind leans each strand and sets it shivering.
 function pose(g, s, t, growth, wither, wind) {
   const out = [];
   const reach = growth * (s.span + 1.5);
@@ -230,7 +230,9 @@ function pose(g, s, t, growth, wither, wind) {
     for (let i = 0; i < st.segs.length; i++) {
       const seg = st.segs[i];
       const f = clamp(reach - (st.base + i), 0, 1);
-      const sway = g.sway * 0.04 * st.flex * Math.sin(t * (0.7 + g.sway * 0.5) + st.phase - i * 0.4);
+      // In air a stem stands nearly still and shivers as a whole when the wind gets up (a slow wave
+      // rolling up it would read as weed under water).
+      const sway = g.sway * 0.04 * st.flex * (0.12 + 1.5 * Math.min(1, Math.abs(wind))) * Math.sin(t * (1.6 + g.sway * 0.8) + st.phase - i * 0.1);
       // Withering plants droop: every joint bends a little toward the ground.
       const droop = wither * 0.13 * Math.sign(Math.cos(a) || 1);
       a += seg.bend * f + sway + droop + wind * 0.035 * st.flex;

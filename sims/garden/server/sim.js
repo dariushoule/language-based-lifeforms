@@ -844,39 +844,100 @@ export function compendium(world, limit = 300) {
 }
 
 // ---------- movement ----------
+// Fireflies are beetles, and fly like them: they weave across their line, bound up and down, turn
+// sharply and brake late; and they don't hang in the air. With nothing in hand, or someone to talk
+// to, they land: on a flower, on the wall, in the grass.
 
-const maxSpeed = (f) => 64 * (0.55 + 0.45 * f.needs.rest) * (0.8 + 0.2 * f.needs.nectar);
+const maxSpeed = (f) => 78 * (0.55 + 0.45 * f.needs.rest) * (0.8 + 0.2 * f.needs.nectar);
 const groundAt = () => WORLD.floor;
 
-// Accelerates toward (tx, ty), slowing on arrival; true once within stopAt.
+// Flies toward (tx, ty); true once within stopAt.
 function steer(f, tx, ty, dt, speed, stopAt = 8) {
   f.steering = true;
   const dx = tx - f.x, dy = ty - f.y, d = Math.hypot(dx, dy);
-  if (d < stopAt) { f.vx *= 0.9; f.vy *= 0.9; return true; }
-  const want = Math.min(speed, d * 1.2 + 8);
-  const k = Math.min(1, dt * 2.4);
-  f.vx += ((dx / d) * want - f.vx) * k;
-  f.vy += ((dy / d) * want - f.vy) * k;
+  if (d < stopAt) { f.vx *= 0.8; f.vy *= 0.8; return true; }
+  const want = Math.min(speed, d * 2.2 + 10);
+  // The weave: side to side across the line of flight, with a bounding rise and fall. Every so
+  // often it changes its beat; close to where it's going, it straightens out to land.
+  const w = (f.weave ??= { ph: Math.random() * 10, rate: 5 + Math.random() * 3 });
+  w.ph += dt * w.rate;
+  if (Math.random() < dt * 0.6) { w.rate = 5 + Math.random() * 3; w.ph += Math.random() * 3; }
+  const loose = clamp((d - stopAt) / 28, 0, 1);
+  const side = Math.sin(w.ph) * 1.15 * loose, lift = Math.sin(w.ph * 1.7 + 1) * 0.5 * loose;
+  const ux = dx / d, uy = dy / d, k = Math.min(1, dt * 7);
+  f.vx += ((ux - uy * side) * want - f.vx) * k;
+  f.vy += ((uy + ux * side - lift) * want - f.vy) * k;
+  // And now and then a sudden dart off its line, for no reason anyone can see.
+  if (loose === 1 && Math.random() < dt * 0.5) { f.vx += rand(-55, 55); f.vy += rand(-45, 45); }
   return false;
 }
 
-// Two fireflies in conversation hover a little apart, facing each other.
+// Where a firefly would settle near (x, y): on the nearest flower or leaf, on the coping of the wall,
+// clinging to its face, or down in the grass; never where another already sits. Null high in the
+// open air, where there is nothing to land on.
+function perchNear(world, f, x = f.x, y = f.y) {
+  const taken = flies(world).filter((o) => o !== f && o.roost && !o.roost.circle).map((o) => o.roost);
+  const free = (s) => taken.every((t) => dist(t, s) > 16);
+  const at = { x, y };
+  // A flower or a leaf, if one is close.
+  const leaf = plants(world).filter((p) => (p.state === 'mature' || p.state === 'growing') && p.growth > 0.5 && p.genome.form !== 'lily')
+    .map((p) => { const h = headPoint(p); return { x: h.x + 6, y: h.y + 8, plant: p.id }; })
+    .filter((s) => dist(s, at) < 80 && free(s)).sort((a, b) => dist(a, at) - dist(b, at))[0];
+  if (leaf) return leaf;
+  // Otherwise whatever is under it or behind it.
+  for (const dx of [0, 20, -20, 40, -40]) {
+    const sx = clamp(x + dx, EDGE, WORLD.width - EDGE);
+    const s = y < WORLD.wallTop + 24 ? { x: sx, y: WORLD.wallTop - 3 } : y < WORLD.ground ? { x: sx, y }
+      : { x: sx, y: inPond(sx, y, 6) ? POND.y + POND.ry + 8 : clamp(y, WORLD.ground + 8, groundAt() - 4) };
+    if (dist(s, at) < 110 && free(s)) return s;
+  }
+  return null;
+}
+
+// Settles where it is: flies to the nearest perch and sits; with none in reach, circles slowly.
+function roost(world, f, dt) {
+  if (f.roost?.plant != null && !['mature', 'growing'].includes(byId(world, f.roost.plant, 'plant')?.state)) f.roost = null;
+  f.roost ??= perchNear(world, f) ?? { circle: true, x: f.x, y: f.y, r: rand(22, 40), turn: pick([-1.3, 1.3]), a: Math.random() * 6.3 };
+  const r = f.roost;
+  if (r.circle) {
+    r.a += r.turn * dt;
+    steer(f, clamp(r.x + Math.cos(r.a) * r.r, EDGE, WORLD.width - EDGE), clamp(r.y + Math.sin(r.a) * r.r * 0.55, WORLD.ceiling, groundAt() - 6), dt, maxSpeed(f) * 0.7, 2);
+    if (r.until != null && world.time > r.until) f.roost = null; // a turn in the air, and down again
+    return;
+  }
+  f.perched = steer(f, r.x, r.y, dt, maxSpeed(f) * 0.8, 4);
+  // It doesn't sit for long: after a little while it takes a turn in the air, or flits to another
+  // perch nearby (less often while it's deep in talk).
+  if (!f.perched) return;
+  r.until ??= world.time + (f.talking ? rand(6, 14) : rand(1.5, 5));
+  if (world.time < r.until) return;
+  const a = Math.random() * 6.3, far = rand(70, 200);
+  const x = clamp(f.x + Math.cos(a) * far, EDGE, WORLD.width - EDGE), y = clamp(f.y + Math.sin(a) * far * 0.6, WORLD.wallTop - 40, groundAt() - 4);
+  f.roost = Math.random() < 0.45 ? { circle: true, x: (f.x + x) / 2, y: Math.min((f.y + y) / 2, f.y - 12), r: rand(24, 48), turn: pick([-1.5, 1.5]), a: Math.random() * 6.3, until: world.time + rand(3, 6) }
+    : perchNear(world, f, x, y) ?? { ...r, until: null };
+}
+
+// Two fireflies in conversation come within sight of each other and settle, and flash back and forth.
 function converse(world, f, o, dt) {
-  const side = Math.sign(f.x - o.x) || (f.id < o.id ? -1 : 1);
-  const mx = (f.x + o.x) / 2, my = (f.y + o.y) / 2;
-  steer(f, clamp(mx + side * 24, EDGE, WORLD.width - EDGE), clamp(my, WORLD.ceiling + 30, groundAt() - 30), dt, maxSpeed(f) * 0.7, 5);
+  const d = dist(f, o);
+  if (d > 120) {
+    f.roost = null;
+    steer(f, clamp(o.x + ((f.x - o.x) / d) * 60, EDGE, WORLD.width - EDGE), clamp(o.y + ((f.y - o.y) / d) * 60, WORLD.ceiling + 30, groundAt() - 8), dt, maxSpeed(f), 10);
+  } else roost(world, f, dt);
 }
 
 function physics(world, f, dt, sky) {
-  // Fireflies keep a little air between them, and more from those they aren't talking with.
-  for (const o of flies(world)) {
-    if (o === f) continue;
-    const room = f.talking && f.talk.with === o.id ? 30 : 64;
-    const d = dist(f, o);
-    if (d > 0 && d < room) { const push = 70 * (1 - d / room) * dt; f.vx += ((f.x - o.x) / d) * push; f.vy += ((f.y - o.y) / d) * push; }
+  if (f.perched) { f.vx = 0; f.vy = 0; } else {
+    // In the air they keep a little room between them.
+    for (const o of flies(world)) {
+      if (o === f || o.perched) continue;
+      const room = f.talking && f.talk.with === o.id ? 30 : 64;
+      const d = dist(f, o);
+      if (d > 0 && d < room) { const push = 70 * (1 - d / room) * dt; f.vx += ((f.x - o.x) / d) * push; f.vy += ((f.y - o.y) / d) * push; }
+    }
+    // The wind carries them a little, gusts more.
+    f.vx += sky.wind * 9 * dt;
   }
-  // The wind carries them a little, gusts more; a perched firefly holds on.
-  if (!f.perched) f.vx += sky.wind * 9 * dt;
   f.x += f.vx * dt;
   f.y += f.vy * dt;
   if (!f.steering) { f.vx *= 1 - Math.min(1, dt * 1.5); f.vy *= 1 - Math.min(1, dt * 1.5); }
@@ -940,6 +1001,7 @@ const RUN = {
     const at = headPoint(p);
     if (!steer(f, at.x, at.y, dt, maxSpeed(f), AT_FLOWER)) return false;
     f.sipping = p.id;
+    f.perched = true; // it lands on the flower to drink
     a.work = (a.work ?? 0) + dt;
     if (a.work < 1.6) return false;
     a.work = 0;
@@ -967,7 +1029,7 @@ const RUN = {
     if (f.perched) f.needs.rest = Math.min(1, f.needs.rest + 0.03 * dt);
     if (a.left > 0) return false;
     f.perched = false;
-    remember(world, f, `rested for ${a.seconds}s`);
+    remember(world, f, 'rested for a while');
     return true;
   },
 
@@ -980,13 +1042,17 @@ const RUN = {
 
   // Fly up into open air above the flowers and watch what the sky does.
   watch_sky(world, f, a, dt) {
-    a.to ??= { x: clamp(f.x + rand(-60, 60), 80, WORLD.width - 80), y: rand(250, 340) };
+    // From the coping of the wall, looking up; or else circling slowly in the open air above it.
+    a.to ??= Math.random() < 0.6 ? { x: clamp(f.x + rand(-90, 90), EDGE + 20, WORLD.width - EDGE - 20), y: WORLD.wallTop - 3, sit: true }
+      : { x: clamp(f.x + rand(-60, 60), 90, WORLD.width - 90), y: rand(240, 320), a: Math.random() * 6.3, turn: pick([-1.2, 1.2]) };
     if (!a.from) {
       a.t = (a.t ?? 0) + dt;
-      if (!steer(f, a.to.x, a.to.y, dt, maxSpeed(f), 14) && a.t < 30) return false;
+      if (!steer(f, a.to.x, a.to.y, dt, maxSpeed(f), a.to.sit ? 4 : 14) && a.t < 30) return false;
       a.from = skyAt(world.time);
+      if (a.to.sit) f.roost = a.to; // and there it stays afterward, until it has somewhere to go
     }
-    steer(f, a.to.x, a.to.y + Math.sin(world.time * 0.8 + f.id) * 6, dt, 14, 2);
+    if (a.to.sit) f.perched = steer(f, a.to.x, a.to.y, dt, maxSpeed(f) * 0.6, 4);
+    else { a.to.a += a.to.turn * dt; steer(f, a.to.x + Math.cos(a.to.a) * 34, a.to.y + Math.sin(a.to.a) * 15, dt, maxSpeed(f) * 0.6, 2); }
     a.left = (a.left ?? a.seconds) - dt;
     if (a.left > 0) return false;
     watched(world, f, a.from, skyAt(world.time));
@@ -1036,6 +1102,7 @@ const RUN = {
     }
     const at = plotPos(a.plot);
     if (!steer(f, at.x, at.y - 8, dt, maxSpeed(f), 9)) return false;
+    f.perched = true; // down on the earth, working the seed in
     a.work = (a.work ?? 0) + dt;
     if (a.work < 1.4) return false;
     const s = f.carrying;
@@ -1060,6 +1127,7 @@ const RUN = {
     a.t = (a.t ?? 0) + dt;
     if (a.t > 45) throw new Error(`I couldn't reach plot ${a.plot}`);
     if (!steer(f, p.x, p.y - 10, dt, maxSpeed(f), 9)) return false;
+    f.perched = true;
     a.work = (a.work ?? 0) + dt;
     if (a.work < 1.5) return false;
     world.spiral.plots[a.plot] = null;
@@ -1400,7 +1468,7 @@ function stepFly(world, f, dt, sky) {
   }
   if (f.rethinkAt != null && world.time >= f.rethinkAt && f.awaiting == null) { f.rethinkAt = null; interrupt(world, f, 0); }
   if (!f.leaving) {
-    if (!f.action && f.plan.length) f.action = f.plan.shift();
+    if (!f.action && f.plan.length) { f.action = f.plan.shift(); f.roost = null; }
     if (!f.action && f.awaiting == null && world.time >= f.nextThinkAt) think(world, f);
   }
 
@@ -1411,7 +1479,9 @@ function stepFly(world, f, dt, sky) {
   f.steering = false;
   f.sipping = null;
   f.waking = null;
-  if (f.talking) { f.perched = false; converse(world, f, partner, dt); }
+  f.perched = false;
+  if (f.talking) converse(world, f, partner, dt);
+  else if (!f.action && !f.leaving && !f.entering) roost(world, f, dt); // nothing in hand: it lands, it doesn't hang in the air
   else if (f.action) {
     try {
       if (RUN[f.action.type](world, f, f.action, dt)) f.action = null;
@@ -1469,7 +1539,7 @@ function view(world, e) {
         id: e.id, kind: e.kind, name: e.name, x: e.x, y: e.y, vx: e.vx, vy: e.vy, facing: e.facing,
         needs: e.needs, emotion: e.emotion, brain: e.brain, glow: e.glow, flash: e.flash,
         doing: doingOf(world, e), said: e.said, gen: e.gen, age: Math.floor(ageOf(world, e)), lifespan: e.lifespan, leaving: e.leaving, thought: e.thought,
-        perched: e.perched, waking: e.waking ?? null, sipping: e.sipping ?? null, carrying: e.carrying ? e.carrying.hue : null, pollen: e.pollen ? e.pollen.hue : null,
+        perched: e.perched, talking: Boolean(e.talking), waking: e.waking ?? null, sipping: e.sipping ?? null, carrying: e.carrying ? e.carrying.hue : null, pollen: e.pollen ? e.pollen.hue : null,
         persona: { personality: e.persona.personality, desire: e.persona.desire, hunch: e.persona.hunch, temperament: e.persona.temperament },
         origins: glimmers(e), article: e.article && { title: e.article.title, url: e.article.url, by: e.article.by },
         predecessorName: e.predecessorName, seenMoon: e.seenMoon, sown: e.sown ?? 0,

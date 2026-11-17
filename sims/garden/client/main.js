@@ -7,8 +7,9 @@ import { createBook } from './book.js';
 
 const { width: W, height: H } = WORLD;
 const TAU = Math.PI * 2;
-const DEPTH = { sky: 0, stars: 0.1, streak: 0.15, moonGlow: 0.2, moon: 0.3, clouds: 0.5, pale: 0.7, wall: 1, mist: 1.5, ground: 2, pond: 2.4, floorGlow: 2.8,
-  plant: 3, bloom: 4.5, seed: 5, sparks: 6, halo: 7, fly: 8, label: 9, rain: 10, bokeh: 12 };
+const DEPTH = { sky: 0, stars: 0.1, streak: 0.15, moonGlow: 0.2, moon: 0.3, clouds: 0.5, pale: 0.7, wall: 1, beyond: 1.1, mist: 1.5, ground: 2, pond: 2.4, floorGlow: 2.8,
+  plant: 3, bloom: 4.5, seed: 5, sparks: 6, halo: 7, fly: 8, label: 9, rain: 10, fore: 11 };
+const DOOR = { x: 318, w: 50, h: 100 }; // in the back wall; a path runs from it toward us
 const tip = document.getElementById('tip');
 const bubbleLayer = document.getElementById('bubbles');
 const esc = (s) => String(s ?? '').replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' })[c]);
@@ -104,8 +105,8 @@ class Garden extends Phaser.Scene {
     }
     this.game.canvas.addEventListener('webglcontextlost', () => note('the GPU dropped the WebGL context; reload to try again'));
     if (DEBUG) this.showGpu();
-    this.input.on('pointermove', (p) => (this.pointer = { x: p.event.clientX, y: p.event.clientY }));
-    this.input.on('gameout', () => { this.hovered = null; });
+    this.input.on('pointermove', (p) => { this.pointer = { x: p.event.clientX, y: p.event.clientY }; this.pointerIn = !p.wasTouch; });
+    this.input.on('gameout', () => { this.hovered = null; this.pointerIn = false; });
     connect(this);
     if (import.meta.env.DEV || DEBUG) window.garden = this; // for poking at the scene from the console
   }
@@ -138,6 +139,12 @@ class Garden extends Phaser.Scene {
       const g = c.createRadialGradient(4, 4, 0, 4, 4, 4);
       g.addColorStop(0, 'rgba(255,255,255,0.95)'); g.addColorStop(1, 'rgba(255,255,255,0)');
       c.fillStyle = g; c.fillRect(0, 0, 8, 8);
+    });
+    // A star: a hard point with barely any halo, so the sky reads as distance and not as specks adrift.
+    canvas('star', 6, 6, (c) => {
+      const g = c.createRadialGradient(3, 3, 0, 3, 3, 3);
+      g.addColorStop(0, 'rgba(255,255,255,1)'); g.addColorStop(0.3, 'rgba(255,255,255,0.7)'); g.addColorStop(0.55, 'rgba(255,255,255,0.08)'); g.addColorStop(1, 'rgba(255,255,255,0)');
+      c.fillStyle = g; c.fillRect(0, 0, 6, 6);
     });
     // The moon's face: pale, a little darker at the limb, with its seas.
     canvas('moon', 128, 128, (c) => {
@@ -199,43 +206,126 @@ class Garden extends Phaser.Scene {
       c.fillStyle = g; c.fillRect(0, 0, W, skyH);
     });
 
-    // The wall, and the crowns of whatever grows beyond it.
-    const wallY = 230, top = WORLD.wallTop - wallY;
+    // The wall, and what grows beyond it: old fieldstone half under ivy, with a door in it, and
+    // trees leaning over from outside.
+    const wallY = 110, top = WORLD.wallTop - wallY, foot = WORLD.ground - wallY;
     paint('wall', W, WORLD.ground + 8 - wallY, (c) => {
-      for (let i = 0; i < 15; i++) {
-        const x = rnd(-20, W + 20), tall = Math.random() < 0.45, h = tall ? rnd(70, 135) : rnd(35, 80), w = tall ? rnd(16, 26) : rnd(50, 95);
-        c.fillStyle = `rgb(${38 + rnd(0, 12)},${50 + rnd(0, 14)},${54 + rnd(0, 12)})`;
-        c.beginPath(); c.ellipse(x, top + 10 - h / 2, w / 2, h / 2 + 12, 0, 0, TAU); c.fill();
-        if (!tall) for (let j = 0; j < 3; j++) { c.beginPath(); c.ellipse(x + rnd(-w / 2, w / 2), top - h * rnd(0.3, 0.8), w * 0.3, h * 0.3, 0, 0, TAU); c.fill(); }
+      const blob = (x, y, r, squash = 0.75) => { c.beginPath(); c.ellipse(x, y, r, r * squash, 0, 0, TAU); c.fill(); };
+      const crown = (x, y, r, n) => { for (let j = 0; j < n; j++) { const a = rnd(0, TAU), d = rnd(0, r * 0.75); blob(x + Math.cos(a) * d, y + Math.sin(a) * d * 0.7, r * rnd(0.3, 0.55)); } };
+      // A far line of woods, greyed by distance.
+      c.fillStyle = '#39475a';
+      for (let x = -40; x < W + 40; x += rnd(26, 60)) crown(x, top - rnd(-6, 30), rnd(30, 56), 7);
+      // Nearer trees: some tall and narrow, some broad, none the same height.
+      for (let i = 0; i < 9; i++) {
+        const x = (i + rnd(0.1, 0.9)) * (W / 9);
+        c.fillStyle = `rgb(${30 + rnd(0, 12)},${44 + rnd(0, 14)},${44 + rnd(0, 12)})`;
+        if (Math.random() < 0.35) {
+          const h = rnd(110, 200), w = rnd(18, 30);
+          c.beginPath(); c.ellipse(x, top + 10 - h / 2, w / 2, h / 2 + 10, 0, 0, TAU); c.fill();
+          for (let j = 0; j < 8; j++) blob(x + rnd(-w * 0.3, w * 0.3), top - rnd(0, h), w * rnd(0.3, 0.5), 1.4);
+        } else {
+          const h = rnd(70, 150);
+          c.strokeStyle = c.fillStyle; c.lineWidth = rnd(5, 9); c.lineCap = 'round';
+          c.beginPath(); c.moveTo(x, top + 12); c.quadraticCurveTo(x + rnd(-10, 10), top - h * 0.4, x + rnd(-14, 14), top - h * 0.7); c.stroke();
+          crown(x + rnd(-8, 8), top - h, rnd(38, 70), 14);
+        }
       }
-      const body = c.createLinearGradient(0, top, 0, top + 160);
-      body.addColorStop(0, '#84838f'); body.addColorStop(1, '#5a5b69');
-      c.fillStyle = body; c.fillRect(0, top + 4, W, 170);
-      for (let row = 0, y = top + 10; y < top + 164; row++, y += 15) {
-        for (let x = row % 2 ? -22 : 0; x < W;) {
-          const w = rnd(30, 58), shade = rnd(-16, 16);
-          c.fillStyle = `rgb(${118 + shade - row * 3},${118 + shade - row * 3},${132 + shade - row * 3})`;
-          c.fillRect(x + 1, y + 1, w - 2, 13);
+      // Fieldstone, no two stones alike, dark in the joints and darker toward the foot.
+      c.fillStyle = '#4e4b4f'; c.fillRect(0, top + 4, W, foot - top + 4);
+      for (let y = top + 9; y < foot + 6;) {
+        const rowH = rnd(11, 19), deep = (y - top) / (foot - top);
+        for (let x = rnd(-30, 0); x < W;) {
+          const w = rnd(18, 62), s = rnd(-18, 18);
+          c.fillStyle = `rgb(${128 + s - deep * 26},${122 + s - deep * 24},${118 + s * 0.8 - deep * 18})`;
+          c.beginPath(); c.roundRect(x + 1, y + 1 + rnd(-1, 1), w - 2, rowH - 2, rnd(2, 5)); c.fill();
           x += w;
         }
+        y += rowH;
       }
       // Coping stones along the top, none quite level with its neighbor.
       for (let x = -10; x < W;) {
-        const w = rnd(46, 80), lift = rnd(0, 4);
-        c.fillStyle = `rgb(${146 + rnd(-10, 10)},${146 + rnd(-10, 10)},${160 + rnd(-10, 10)})`;
-        c.fillRect(x + 1, top - lift, w - 2, 11 + lift);
+        const w = rnd(40, 84), lift = rnd(0, 6);
+        c.fillStyle = `rgb(${146 + rnd(-12, 10)},${142 + rnd(-12, 10)},${140 + rnd(-10, 10)})`;
+        c.beginPath(); c.roundRect(x + 1, top - lift, w - 2, 11 + lift, 3); c.fill();
         x += w;
       }
+      // A door under a stone arch. Nobody has opened it in a long time.
+      const dx = DOOR.x, dw = DOOR.w, dy = foot - DOOR.h;
+      const arch = (grow) => {
+        c.beginPath(); c.moveTo(dx - dw / 2 - grow, foot + 4); c.lineTo(dx - dw / 2 - grow, dy + dw / 2);
+        c.arc(dx, dy + dw / 2, dw / 2 + grow, Math.PI, 0); c.lineTo(dx + dw / 2 + grow, foot + 4); c.closePath();
+      };
+      c.fillStyle = '#948e88'; arch(9); c.fill();
+      c.save(); arch(0); c.clip();
+      c.fillStyle = '#4c3b2c'; c.fillRect(dx - dw, dy, dw * 2, DOOR.h + 8);
+      c.strokeStyle = 'rgba(20,14,10,0.6)'; c.lineWidth = 1;
+      for (let x = dx - dw / 2 + 8; x < dx + dw / 2; x += 8.5) { c.beginPath(); c.moveTo(x, dy); c.lineTo(x, foot + 4); c.stroke(); }
+      c.fillStyle = '#24201e'; c.fillRect(dx - dw / 2, dy + DOOR.h * 0.4, dw, 3); c.fillRect(dx - dw / 2, dy + DOOR.h * 0.82, dw, 3);
+      c.restore();
+      c.fillStyle = '#24201e'; c.beginPath(); c.arc(dx + dw / 2 - 9, dy + DOOR.h * 0.6, 2.6, 0, TAU); c.fill();
       // Moss and damp, heavier toward the foot.
-      for (let i = 0; i < 90; i++) {
-        const x = rnd(0, W), y = top + 20 + Math.random() ** 0.6 * 150, r = rnd(8, 34);
+      for (let i = 0; i < 70; i++) {
+        const x = rnd(0, W), y = top + 20 + Math.random() ** 0.6 * (foot - top - 10), r = rnd(8, 34);
         const g = c.createRadialGradient(x, y, 0, x, y, r);
-        g.addColorStop(0, `rgba(${60 + rnd(0, 20)},${98 + rnd(0, 30)},${70},${rnd(0.12, 0.34)})`); g.addColorStop(1, 'rgba(60,100,70,0)');
+        g.addColorStop(0, `rgba(${60 + rnd(0, 20)},${98 + rnd(0, 30)},${70},${rnd(0.12, 0.3)})`); g.addColorStop(1, 'rgba(60,100,70,0)');
         c.fillStyle = g; c.fillRect(x - r, y - r, r * 2, r * 2);
       }
-      const foot = c.createLinearGradient(0, top + 110, 0, top + 170);
-      foot.addColorStop(0, 'rgba(30,40,45,0)'); foot.addColorStop(1, 'rgba(30,40,45,0.55)');
-      c.fillStyle = foot; c.fillRect(0, top + 110, W, 70);
+      // Ivy: pouring over the coping in places, climbing from the foot in others, so the wall is
+      // never one unbroken band.
+      const ivy = (x0, y0, spread, drop, n) => {
+        for (let i = 0; i < n; i++) {
+          const k = Math.random() ** 1.6, l = Math.random();
+          c.fillStyle = `rgb(${44 + l * 34},${78 + l * 44},${52 + l * 22})`;
+          c.beginPath(); c.ellipse(x0 + (Math.random() + Math.random() - 1) * spread * (1 - k * 0.55), y0 + k * drop, rnd(2.2, 4.6), rnd(1.4, 2.8), rnd(0, TAU), 0, TAU); c.fill();
+        }
+      };
+      for (let i = 0; i < 7; i++) ivy(rnd(0, W), top - 5, rnd(60, 150), rnd(40, 125), 560);
+      for (let i = 0; i < 5; i++) ivy(rnd(0, W), foot + 4, rnd(50, 120), -rnd(40, 110), 420);
+      ivy(dx - 46, top - 5, 70, 80, 460);
+      const shadow = c.createLinearGradient(0, foot - 50, 0, foot + 8);
+      shadow.addColorStop(0, 'rgba(26,34,38,0)'); shadow.addColorStop(1, 'rgba(26,34,38,0.6)');
+      c.fillStyle = shadow; c.fillRect(0, foot - 50, W, 58);
+    });
+
+    // What stands between us and the garden: boughs hanging in from above, and the near grass. We
+    // are looking in through them, from among the leaves.
+    const dark = () => { const l = Math.random(); return `rgb(${24 + l * 14},${40 + l * 20},${30 + l * 12})`; };
+    const bough = (key, w, h, flip) => paint(key, w, h, (c) => {
+      c.filter = 'blur(1px)';
+      if (flip) { c.translate(w, 0); c.scale(-1, 1); }
+      c.strokeStyle = 'rgb(28,30,30)'; c.lineCap = 'round';
+      const twig = (x, y, a, len, wd, more) => {
+        const x2 = x + Math.cos(a) * len, y2 = y + Math.sin(a) * len;
+        c.lineWidth = wd; c.beginPath(); c.moveTo(x, y); c.quadraticCurveTo((x + x2) / 2, (y + y2) / 2 + len * 0.12, x2, y2); c.stroke();
+        if (more > 0) for (let i = 0; i < 3; i++) { const k = rnd(0.3, 1); twig(x + (x2 - x) * k, y + (y2 - y) * k, a + rnd(-0.9, 0.9), len * rnd(0.4, 0.65), wd * 0.55, more - 1); }
+        else for (let i = 0; i < 9; i++) {
+          const k = rnd(0.1, 1);
+          c.fillStyle = dark();
+          c.save(); c.translate(x + (x2 - x) * k + rnd(-6, 6), y + (y2 - y) * k + rnd(0, 14)); c.rotate(rnd(0.9, 2.2));
+          c.beginPath(); c.ellipse(0, 0, rnd(6, 10), rnd(2.4, 3.8), 0, 0, TAU); c.fill(); c.restore();
+        }
+      };
+      twig(-20, h * 0.1, 0.2, w * 0.6, 9, 3);
+      twig(-20, -12, 0.55, w * 0.38, 6, 2);
+    });
+    bough('boughL', 420, 230, false);
+    bough('boughR', 300, 170, true);
+    const NEAR_H = 190;
+    paint('nearGrass', W, NEAR_H, (c) => {
+      c.filter = 'blur(1.2px)';
+      // High in the corners, low in front of the spiral and the pond.
+      const tall = (x) => 12 + 135 * smooth((320 - x) / 320) ** 1.5 + 42 * smooth((x - 900) / 380);
+      for (let i = 0; i < 460; i++) {
+        const x = rnd(-10, W + 10), h = tall(x) * rnd(0.4, 1), lean = rnd(-0.35, 0.35) * h, w = 2 + h * 0.035;
+        c.fillStyle = dark();
+        c.beginPath(); c.moveTo(x - w, NEAR_H + 2); c.quadraticCurveTo(x - w * 0.4 + lean * 0.3, NEAR_H - h * 0.6, x + lean, NEAR_H - h);
+        c.quadraticCurveTo(x + w * 0.6 + lean * 0.4, NEAR_H - h * 0.55, x + w, NEAR_H + 2); c.closePath(); c.fill();
+      }
+      for (let i = 0; i < 4; i++) {
+        const x = rnd(-10, 240), h = rnd(60, 120) * smooth((320 - x) / 320 + 0.25);
+        c.fillStyle = dark();
+        c.save(); c.translate(x, NEAR_H + 2); c.rotate(rnd(-0.6, 0.6)); c.beginPath(); c.ellipse(0, -h / 2, h * 0.1, h / 2, 0, 0, TAU); c.fill(); c.restore();
+      }
     });
 
     // The ground: grass, the spiral bed with its path of pale stones, and the pond's basin.
@@ -275,6 +365,14 @@ class Garden extends Phaser.Scene {
         c.lineWidth = 0.7 + k;
         c.beginPath(); c.moveTo(x, y0(y)); c.lineTo(x + rnd(-2.5, 2.5), y0(y) - len); c.stroke();
       }
+      // Stepping stones from the door toward us, larger and further apart as they come: the ground
+      // is a plane running away to the wall, not a strip along the bottom.
+      for (let k = 0.02; k < 1; k += 0.035 + 0.075 * k) {
+        const u = 1 - k, px = u * u * DOOR.x + 2 * u * k * 332 + k * k * 170, py = u * u * (WORLD.ground + 4) + 2 * u * k * 610 + k * k * 728;
+        const s = 0.42 + 1.0 * ((py - WORLD.ground) / (H - WORLD.ground));
+        c.fillStyle = `rgb(${188 + rnd(-16, 16)},${186 + rnd(-16, 16)},${192 + rnd(-14, 14)})`;
+        c.beginPath(); c.ellipse(px + rnd(-3, 3) * s, y0(py), rnd(15, 20) * s, rnd(4.5, 6) * s, rnd(-0.12, 0.12), 0, TAU); c.fill();
+      }
       // The spiral's path, stone by stone, and a ring of darker earth at each plot.
       for (let k = 0.012; k <= 1; k += 0.0064) {
         const p = spiralPoint(k), s = 0.6 + 0.5 * ((p.y - WORLD.ground) / (H - WORLD.ground));
@@ -305,13 +403,24 @@ class Garden extends Phaser.Scene {
     this.paleSky = this.add.image(0, 0, 'pale').setOrigin(0, 0).setDepth(DEPTH.pale).setAlpha(0);
     this.wall = this.add.image(0, wallY, 'wall').setOrigin(0, 0).setDepth(DEPTH.wall);
     this.ground = this.add.image(0, groundY, 'ground').setOrigin(0, 0).setDepth(DEPTH.ground);
+    this.fore = [
+      this.add.image(0, 0, 'boughL').setOrigin(0, 0).setData({ turn: 0.012 }),
+      this.add.image(W, 0, 'boughR').setOrigin(1, 0).setData({ turn: -0.012 }),
+      this.add.image(0, H + 2, 'nearGrass').setOrigin(0, 1).setData({ turn: 0 }),
+    ].map((img) => img.setDepth(DEPTH.fore));
 
     this.stars = Array.from({ length: LITE ? 130 : 280 }, () => {
-      const bright = Math.random() < 0.12;
-      return this.add.image(Math.random() * W, Math.random() ** 0.8 * (WORLD.wallTop + 10), 'mote').setDepth(DEPTH.stars).setBlendMode(Phaser.BlendModes.ADD)
-        .setScale(bright ? 0.9 + Math.random() * 0.6 : 0.3 + Math.random() * 0.45).setTint([0xdfe7ff, 0xfff1d8, 0xcfe0ff, 0xffffff][Math.floor(Math.random() * 4)])
+      const bright = Math.random() < 0.1;
+      return this.add.image(Math.random() * W, Math.random() ** 0.8 * (WORLD.wallTop + 10), 'star').setDepth(DEPTH.stars).setBlendMode(Phaser.BlendModes.ADD)
+        .setScale(bright ? 0.85 + Math.random() * 0.4 : 0.35 + Math.random() * 0.35).setTint([0xdfe7ff, 0xfff1d8, 0xcfe0ff, 0xffffff][Math.floor(Math.random() * 4)])
         .setData({ a: bright ? 1 : 0.45 + Math.random() * 0.5, sp: 0.5 + Math.random() * 2.2, ph: Math.random() * 10 });
     });
+    // Other lights, out among the trees beyond the wall, where no firefly of the garden has been.
+    this.beyond = Array.from({ length: LITE ? 6 : 14 }, () => ({
+      img: this.add.image(0, 0, 'mote').setBlendMode(Phaser.BlendModes.ADD).setDepth(DEPTH.beyond).setTint(0xd6ee6a),
+      x: Math.random() * W, y: WORLD.wallTop - 16 - Math.random() ** 1.5 * 150, vx: (Math.random() - 0.5) * 7,
+      ph: Math.random() * 20, period: 3.5 + Math.random() * 5, size: 0.3 + Math.random() * 0.35,
+    }));
     this.streaks = [];
     this.fx = this.add.graphics().setDepth(DEPTH.streak).setBlendMode(Phaser.BlendModes.ADD);
 
@@ -329,16 +438,14 @@ class Garden extends Phaser.Scene {
     }));
     this.veil = this.add.rectangle(W / 2, skyH / 2, W, skyH, 0x10152c).setDepth(DEPTH.clouds + 0.02).setAlpha(0);
 
-    this.mist = Array.from({ length: LITE ? 3 : 6 }, (_, i) => this.add.image(Math.random() * W, WORLD.ground + 4 + i * 5, 'glow').setBlendMode(Phaser.BlendModes.ADD)
-      .setDepth(DEPTH.mist + (i > 2 ? 1.2 : 0)).setScale(16 + Math.random() * 10, 1.4 + Math.random()).setData({ vx: (Math.random() - 0.5) * 8 }));
+    // A little ground mist at the foot of the wall, on damp nights only.
+    this.mist = Array.from({ length: LITE ? 2 : 3 }, (_, i) => this.add.image(Math.random() * W, WORLD.ground + 4 + i * 5, 'glow').setBlendMode(Phaser.BlendModes.ADD)
+      .setDepth(DEPTH.mist).setScale(16 + Math.random() * 10, 1.4 + Math.random()).setData({ vx: (Math.random() - 0.5) * 8 }));
     this.pond = this.add.graphics().setDepth(DEPTH.pond);
     this.ripples = [];
     this.pondStars = Array.from({ length: 12 }, () => { const a = Math.random() * TAU, k = Math.sqrt(Math.random()) * 0.85; return { x: POND.x + Math.cos(a) * POND.rx * k, y: POND.y + Math.sin(a) * POND.ry * k, ph: Math.random() * 10 }; });
     this.rain = this.add.graphics().setDepth(DEPTH.rain);
     this.drops = Array.from({ length: LITE ? 70 : 150 }, () => ({ x: Math.random() * W, y: Math.random() * H, v: 520 + Math.random() * 260 }));
-    this.bokeh = Array.from({ length: LITE ? 3 : 8 }, () => this.add.image(Math.random() * W, 380 + Math.random() * 340, 'glow')
-      .setBlendMode(Phaser.BlendModes.ADD).setDepth(DEPTH.bokeh).setScale(2.5 + Math.random() * 4).setAlpha(0.015 + Math.random() * 0.03)
-      .setTint([0xdff27a, 0xa7b8ff, 0x9ff2c8][Math.floor(Math.random() * 3)]).setData({ vx: (Math.random() - 0.5) * 6, vy: (Math.random() - 0.5) * 3 }));
     // The whole bed can be opened like any entry; plants on it take the pointer first.
     const bed = this.add.zone(SPIRAL.x, SPIRAL.y, SPIRAL.rx * 2, SPIRAL.ry * 2).setDepth(DEPTH.pond)
       .setInteractive(new Phaser.Geom.Ellipse(SPIRAL.rx, SPIRAL.ry, SPIRAL.rx * 2, SPIRAL.ry * 2), Phaser.Geom.Ellipse.Contains);
@@ -378,21 +485,19 @@ class Garden extends Phaser.Scene {
     } else if (e.kind === 'firefly') {
       v.wings = this.add.image(e.x, e.y, 'wings').setDepth(DEPTH.fly - 0.1);
       v.img = this.interactive(this.add.image(e.x, e.y, 'fly').setDepth(DEPTH.fly), e.id);
-      v.img.setInteractive(new Phaser.Geom.Circle(13, 7, 17), Phaser.Geom.Circle.Contains);
+      v.img.setInteractive(new Phaser.Geom.Circle(13, 7, 30), Phaser.Geom.Circle.Contains); // the beetle is small; its light is the target
       v.lamp = this.add.image(e.x, e.y, 'glow').setDepth(DEPTH.fly + 0.1).setBlendMode(Phaser.BlendModes.ADD);
       v.core = this.add.image(e.x, e.y, 'mote').setDepth(DEPTH.fly + 0.2).setBlendMode(Phaser.BlendModes.ADD);
       v.seed = this.add.image(e.x, e.y, 'mote').setDepth(DEPTH.fly + 0.2).setVisible(false);
       v.label = this.add.text(e.x, e.y, e.name, { fontFamily: 'Inter, sans-serif', fontSize: '11px', color: '#b9c4e6' })
-        .setOrigin(0.5, 0).setDepth(DEPTH.label).setAlpha(0.65);
-      v.dots = this.add.text(e.x, e.y, '• • •', { fontFamily: 'Inter, sans-serif', fontSize: '10px', color: '#e6ecff' })
-        .setOrigin(0.5, 1).setDepth(DEPTH.label);
+        .setOrigin(0.5, 0).setDepth(DEPTH.label).setAlpha(0);
       v.ex = e.x; v.ey = e.y;
     }
     return v;
   }
 
   destroyView(v) {
-    for (const k of ['g', 'img', 'wings', 'lamp', 'core', 'seed', 'label', 'dots']) v[k]?.destroy();
+    for (const k of ['g', 'img', 'wings', 'lamp', 'core', 'seed', 'label']) v[k]?.destroy();
   }
 
   // Snapshots are deltas (server/delta.js): each entity carries only the fields that changed, except
@@ -542,13 +647,19 @@ class Garden extends Phaser.Scene {
     for (const m of this.mist) {
       m.x += (m.getData('vx') + sky.wind * 14) * dt;
       if (m.x < -500) m.x = W + 500; else if (m.x > W + 500) m.x = -500;
-      m.setTint(mix(0x7f8fc8, 0xdfe7ff, sky.light)).setAlpha((0.03 + 0.05 * sky.light + (sky.halo ? 0.035 : 0) + sky.rain * 0.05) * (0.4 + 0.6 * night));
+      m.setTint(mix(0x7f8fc8, 0xdfe7ff, sky.light)).setAlpha((0.01 + (sky.halo ? 0.04 : 0) + sky.rain * 0.05) * (0.4 + 0.6 * night));
     }
-    for (const b of this.bokeh) {
-      b.x += b.getData('vx') * dt; b.y += b.getData('vy') * dt;
-      if (b.x < -150) b.x = W + 150; else if (b.x > W + 150) b.x = -150;
-      if (b.y < 300) b.y = H + 100; else if (b.y > H + 120) b.y = 320;
+    // The lights beyond the wall: each drifts, and every few seconds swoops up through one short flash.
+    for (const b of this.beyond) {
+      b.x += (b.vx + sky.wind * 3) * dt;
+      if (b.x < -20) b.x = W + 20; else if (b.x > W + 20) b.x = -20;
+      const flash = bump(((t + b.ph) % b.period) / b.period, 0.1, 0.045);
+      b.img.setPosition(b.x + Math.sin(t * 0.7 + b.ph) * 6, b.y + Math.sin(t * 1.1 + b.ph * 2) * 4 - flash * 5).setScale(b.size * (0.6 + 0.6 * flash)).setAlpha(flash * night * (1 - 0.7 * sky.rain));
     }
+    // The near leaves are all but black against the garden, and stir when the wind gets up.
+    const shade = mix(ambient(sky), 0x000000, 0.45);
+    const stir = this.wind ?? 0;
+    for (const f of this.fore) f.setTint(shade).setRotation(stir * f.getData('turn')).setX((f.originX ? W : 0) + (f.getData('turn') ? 0 : stir * 2.5));
 
     // The pond: a sheen of sky, the moon lying in it, a few stars, and rings.
     const g = this.pond.clear();
@@ -652,36 +763,51 @@ class Garden extends Phaser.Scene {
     // Lower on the screen is nearer, so a little larger.
     const size = 0.95 + 0.5 * clamp((v.ey - 320) / 380, 0, 1);
     const speed = Math.hypot(e.vx ?? 0, e.vy ?? 0);
-    const x = v.ex, y = v.ey + (e.perched ? 0 : Math.sin(t * 2.3 + e.id) * 2.5);
     const speaking = e.said && this.state.time - e.said.at < 6;
     const selected = profileId === e.id;
-    let light = 0.2 + 0.8 * Math.min(1, (FLASH[e.flash] ?? FLASH['slow pulse'])(t + e.id * 0.37));
+    // A firefly is its light: dark between flashes, the beetle itself barely there.
+    const flash = Math.min(1, (FLASH[e.flash] ?? FLASH['slow pulse'])(t + e.id * 0.37));
+    let light = 0.07 + 0.93 * flash;
     if (speaking) light = 0.8 + 0.2 * Math.sin(t * 9 + e.id);
     if (e.waking) light = 1.3;
-    if (e.perched) light *= 0.4;
+    if (e.perched && !e.talking && !speaking) light *= 0.55;
     if (e.age < 5) light *= 0.25 + 0.15 * e.age;
     if (e.leaving) light *= clamp((v.ey + 40) / 320, 0.2, 1);
     light *= 1 - 0.5 * sky.pale;
+    // In the air it is never still: it jinks about its course, and swoops up through each flash.
+    // Settled on a leaf or the wall, it sits.
+    v.air = (v.air ?? 0) + ((e.perched ? 0 : 1) - (v.air ?? 0)) * Math.min(1, dt * 6);
+    const amp = v.air * size * (2 + 3 * Math.min(1, speed / 40)), ph = e.id * 1.7;
+    const x = v.ex + amp * (0.6 * Math.sin(t * 5.3 + ph) + 0.4 * Math.sin(t * 11.7 + ph * 2));
+    const y = v.ey + amp * (0.6 * Math.sin(t * 6.1 + ph * 1.3) + 0.4 * Math.cos(t * 13.3 + ph)) - v.air * size * 4 * flash;
     const color = hexToInt(e.glow);
-    v.img.setPosition(x, y).setFlipX(e.facing < 0).setScale(size).setRotation(clamp((e.vy ?? 0) / 160, -0.4, 0.4) * (e.facing < 0 ? -1 : 1))
-      .setTint(mix(0x6a7088, 0xffffff, Math.max(sky.light, sky.pale)));
-    v.wings.setPosition(x + e.facing * 1.5 * size, y - 4.5 * size).setScale(size, size * (0.3 + 0.7 * Math.abs(Math.sin(t * 42 + e.id)))).setAlpha(e.perched ? 0 : 0.32);
-    const lx = x - e.facing * 7 * size, ly = y + 1.5 * size;
-    v.lamp.setPosition(lx, ly).setScale(0.5 * size * (0.7 + 0.5 * light)).setTint(color).setAlpha(Math.min(1, light));
-    v.core.setPosition(lx, ly).setScale(0.75 * size).setAlpha(Math.min(1, light * 0.9));
-    this.halos.take(lx, ly, size * (1.3 + 1.1 * light) * (e.waking ? 1.6 : 1), color, 0.24 * light + (selected ? 0.07 : 0));
+    // Flying, it hangs head-up from its wings with the lamp below; sitting, it lies along its perch.
+    const pitch = v.air * 0.75 + (1 - v.air) * (0.15 + 0.5 * ((e.id * 0.618) % 1)) * (v.ey < WORLD.ground ? 1 : 0.3);
+    const body = size * 0.62;
+    v.img.setPosition(x, y).setFlipX(e.facing < 0).setScale(body).setRotation(-pitch * e.facing)
+      .setTint(mix(0x565c74, 0xffffff, Math.max(sky.light * 0.8, sky.pale)));
+    v.wings.setPosition(x + e.facing * 1.5 * body, y - 5 * body).setScale(body * 1.25, body * (0.3 + 0.9 * Math.abs(Math.sin(t * 47 + e.id)))).setAlpha(0.3 * v.air);
+    const lx = x - e.facing * 7 * body * Math.cos(pitch), ly = y + 7 * body * Math.sin(pitch) + 1;
+    v.lamp.setPosition(lx, ly).setScale(0.5 * size * (0.6 + 0.6 * light)).setTint(color).setAlpha(Math.min(1, light));
+    v.core.setPosition(lx, ly).setScale(0.7 * size).setAlpha(Math.min(1, light * 0.95));
+    this.halos.take(lx, ly, size * (1.2 + 1.3 * light) * (e.waking ? 1.6 : 1), color, 0.26 * light + (selected ? 0.07 : 0));
     // Low over the grass, its light pools on the ground.
-    if (v.ey > WORLD.ground - 30) this.floorGlow.take(lx, Math.max(ly + 14, WORLD.ground + 6), 1, color, 0.07 * light).setScale(2.2 * size, 0.5);
-    v.seed.setVisible(e.carrying != null).setPosition(x + e.facing * 3 * size, y + 6 * size);
+    if (v.ey > WORLD.ground - 30) this.floorGlow.take(lx, Math.max(ly + 14, WORLD.ground + 6), 1, color, 0.08 * light).setScale(2.2 * size, 0.5);
+    v.seed.setVisible(e.carrying != null).setPosition(x + e.facing * 2 * size, y + 6 * size);
     if (e.carrying != null) v.seed.setTint(hsl(e.carrying, 0.7, 0.8));
-    v.label.setPosition(x, y + 9 * size).setAlpha(e.leaving ? 0 : selected ? 1 : 0.75);
-    v.dots.setPosition(x, y - 10 * size).setVisible(e.brain === 'thinking').setAlpha(0.45 + 0.4 * Math.sin(t * 4));
-    v.screenTop = y - 12 * size;
+    // No name tags hanging in the air: a name shows while its firefly speaks, when the pointer comes
+    // near, or when its entry is open. (Without a pointer, on a phone, names stay faintly on.)
+    const ptr = this.input.activePointer;
+    const near = this.pointerIn && Math.hypot(ptr.worldX - x, ptr.worldY - y) < 110;
+    const want = e.leaving ? 0 : selected ? 1 : speaking ? 0.8 : near ? 0.75 : LITE ? 0.4 : 0;
+    v.named = (v.named ?? 0) + (want - (v.named ?? 0)) * Math.min(1, dt * 6);
+    v.label.setPosition(x, y + 10 * size).setAlpha(v.named).setVisible(v.named > 0.02);
+    v.screenTop = v.ey - 12 * size;
     v.lampAt = { x: lx, y: ly, light };
     // A moving firefly draws its flashes on the dark as dashes of light.
-    if (speed > 10 && light > 0.55 && t - (v.trailAt ?? 0) > 0.04) {
+    if (speed > 10 && light > 0.5 && t - (v.trailAt ?? 0) > 0.035) {
       v.trailAt = t;
-      this.spark(lx, ly, (Math.random() - 0.5) * 3, (Math.random() - 0.5) * 3, 1.3, 0.12 * size, color, 0.5 * light);
+      this.spark(lx, ly, (Math.random() - 0.5) * 3, (Math.random() - 0.5) * 3, 1.5, 0.12 * size, color, 0.5 * light);
     }
     // Pollen sifts off one that has been at the flowers.
     if (e.pollen != null && speed > 10 && Math.random() < dt * 2.5) this.spark(x, y + 3, (Math.random() - 0.5) * 6, 6 + Math.random() * 6, 1.6, 0.04, hsl(e.pollen, 0.8, 0.75), 0.6);
