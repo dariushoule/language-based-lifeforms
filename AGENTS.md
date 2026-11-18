@@ -1,7 +1,8 @@
 # Agent notes
 
 See README.md for what the simulations are and how the pieces fit together. The host (`server/`) runs one
-simulation from `sims/<name>/`, picked (and paused or not) in `sims/live.js`: right now the night garden
+simulation from `sims/<name>/`, picked (and paused or not) in `sims/live.js` (on hac.run, `PAUSED` in
+`/etc/lbl.env` overrides the pause; see below): right now the night garden
 (`sims/garden/`). The aquarium (`sims/aquarium/`) is the other one; its tank is still on the droplet, as it was left.
 
 ## Deploying to hac.run
@@ -73,10 +74,17 @@ mind-only changes (`sims/garden/mind/main.py`), just `systemctl restart lbl-mind
 ### Pausing, waking and swapping
 
 `LIVE` in `sims/live.js` names the simulation and whether it's paused. A paused one is shown frozen as
-it was left, under its note; it doesn't step or save, and `/mind` answers 503. To pause or wake: change
-`paused`, commit, push, pull on the droplet and `systemctl restart lbl.service` (no build needed). Stop the
-mind while paused (`systemctl disable --now lbl-mind`), and start it again when waking
-(`systemctl enable --now lbl-mind`).
+it was left, under its note; it doesn't step or save, and `/mind` answers 503.
+
+On the droplet, `PAUSED` in `/etc/lbl.env` overrides `paused` in `sims/live.js`, so pausing or waking
+hac.run needs no commit:
+
+```powershell
+ssh root@165.232.128.96 "bash /opt/lbl/server/live.sh pause"   # or wake, or status
+```
+
+It sets `PAUSED`, restarts the sim, and stops and disables the mind while paused (enables and starts it when
+waking), then prints the state and the sim's last log lines.
 
 Swapping in the other simulation is the same plus `npm run build` and pointing the mind unit at its mind:
 `uv sync` as above with `--project sims/<name>/mind`, set the unit's `ExecStart` in

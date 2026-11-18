@@ -28,9 +28,9 @@ streams it to observers on `/ws`, and hands its mind over on `/mind`. `sims/live
 simulation has to provide.
 
 A simulation can be **paused**: it's loaded as it was left and shown frozen, under its note ("the fish are
-sleeping… check back soon"), and it doesn't step, save or take a mind. `paused` in `sims/live.js` sets it
-for production; `SIM` and `PAUSED` in `.env` override it locally (`PAUSED=0` to run a paused one). Pausing
-or waking only needs a restart; switching simulations also needs `npm run build`.
+sleeping… check back soon"), and it doesn't step, save or take a mind. `paused` in `sims/live.js` is the
+default; `SIM` and `PAUSED` in the environment override it (`.env` locally, `PAUSED=0` to run a paused one;
+`/etc/lbl.env` in production, which `server/live.sh` flips). Pausing or waking only needs a restart; switching simulations also needs `npm run build`.
 
 ## How the night garden fits together
 
